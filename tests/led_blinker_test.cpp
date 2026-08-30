@@ -1,12 +1,11 @@
-#include "gtest/gtest.h"
-
 #include "led_blinker.hpp"
+
+#include "gtest/gtest.h"
 
 namespace reflow_pilot {
 namespace {
 
-TEST(LedBlinkerTest, FastModeAlternatesEvery200Milliseconds)
-{
+TEST(LedBlinkerTest, FastModeAlternatesEvery200Milliseconds) {
     LedBlinker blinker(LedBlinkMode::Fast);
 
     EXPECT_TRUE(blinker.is_on());
@@ -18,8 +17,7 @@ TEST(LedBlinkerTest, FastModeAlternatesEvery200Milliseconds)
     EXPECT_TRUE(blinker.is_on());
 }
 
-TEST(LedBlinkerTest, SlowModeAlternatesEverySecond)
-{
+TEST(LedBlinkerTest, SlowModeAlternatesEverySecond) {
     LedBlinker blinker(LedBlinkMode::Slow);
 
     blinker.advance(999);
@@ -28,8 +26,7 @@ TEST(LedBlinkerTest, SlowModeAlternatesEverySecond)
     EXPECT_FALSE(blinker.is_on());
 }
 
-TEST(LedBlinkerTest, LongOnShortOffModeUsesExpectedPhases)
-{
+TEST(LedBlinkerTest, LongOnShortOffModeUsesExpectedPhases) {
     LedBlinker blinker(LedBlinkMode::LongOnShortOff);
 
     EXPECT_TRUE(blinker.is_on());
@@ -39,8 +36,7 @@ TEST(LedBlinkerTest, LongOnShortOffModeUsesExpectedPhases)
     EXPECT_TRUE(blinker.is_on());
 }
 
-TEST(LedBlinkerTest, LongOffShortOnModeUsesExpectedPhases)
-{
+TEST(LedBlinkerTest, LongOffShortOnModeUsesExpectedPhases) {
     LedBlinker blinker(LedBlinkMode::LongOffShortOn);
 
     EXPECT_FALSE(blinker.is_on());
@@ -50,8 +46,7 @@ TEST(LedBlinkerTest, LongOffShortOnModeUsesExpectedPhases)
     EXPECT_FALSE(blinker.is_on());
 }
 
-TEST(LedBlinkerTest, ConstantModesNeverChangeState)
-{
+TEST(LedBlinkerTest, ConstantModesNeverChangeState) {
     LedBlinker on_blinker(LedBlinkMode::On);
     LedBlinker off_blinker(LedBlinkMode::Off);
 
@@ -62,8 +57,7 @@ TEST(LedBlinkerTest, ConstantModesNeverChangeState)
     EXPECT_FALSE(off_blinker.is_on());
 }
 
-TEST(LedBlinkerTest, ChangingModeResetsThePhase)
-{
+TEST(LedBlinkerTest, ChangingModeResetsThePhase) {
     LedBlinker blinker(LedBlinkMode::Fast);
 
     blinker.advance(150);

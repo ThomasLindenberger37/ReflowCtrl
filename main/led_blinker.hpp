@@ -4,7 +4,7 @@
 
 namespace reflow_pilot {
 
-enum class LedBlinkMode {
+enum class LedBlinkMode : std::uint8_t {
     Fast,
     Slow,
     LongOnShortOff,
@@ -14,36 +14,31 @@ enum class LedBlinkMode {
 };
 
 class LedBlinker {
-public:
+   public:
     static constexpr std::uint32_t FAST_DURATION_MS = 200;
     static constexpr std::uint32_t SLOW_DURATION_MS = 1000;
     static constexpr std::uint32_t LONG_DURATION_MS = 1000;
     static constexpr std::uint32_t SHORT_DURATION_MS = 200;
 
-    explicit LedBlinker(const LedBlinkMode mode = LedBlinkMode::Off) noexcept
-    {
+    explicit LedBlinker(const LedBlinkMode mode = LedBlinkMode::Off) noexcept {
         set_mode(mode);
     }
 
-    void set_mode(const LedBlinkMode mode) noexcept
-    {
+    void set_mode(const LedBlinkMode mode) noexcept {
         mode_ = mode;
         phase_elapsed_ms_ = 0;
         is_on_ = mode != LedBlinkMode::Off && mode != LedBlinkMode::LongOffShortOn;
     }
 
-    [[nodiscard]] LedBlinkMode mode() const noexcept
-    {
+    [[nodiscard]] LedBlinkMode mode() const noexcept {
         return mode_;
     }
 
-    [[nodiscard]] bool is_on() const noexcept
-    {
+    [[nodiscard]] bool is_on() const noexcept {
         return is_on_;
     }
 
-    void advance(const std::uint32_t elapsed_ms) noexcept
-    {
+    void advance(const std::uint32_t elapsed_ms) noexcept {
         if (mode_ == LedBlinkMode::On || mode_ == LedBlinkMode::Off) {
             return;
         }
@@ -56,24 +51,19 @@ public:
         }
     }
 
-private:
-    [[nodiscard]] std::uint32_t current_phase_duration_ms() const noexcept
-    {
-        switch (mode_) {
-        case LedBlinkMode::Fast:
+   private:
+    [[nodiscard]] std::uint32_t current_phase_duration_ms() const noexcept {
+        if (mode_ == LedBlinkMode::Fast) {
             return FAST_DURATION_MS;
-        case LedBlinkMode::Slow:
-            return SLOW_DURATION_MS;
-        case LedBlinkMode::LongOnShortOff:
-            return is_on_ ? LONG_DURATION_MS : SHORT_DURATION_MS;
-        case LedBlinkMode::LongOffShortOn:
-            return is_on_ ? SHORT_DURATION_MS : LONG_DURATION_MS;
-        case LedBlinkMode::On:
-        case LedBlinkMode::Off:
-            return 1;
         }
 
-        return 1;
+        if (mode_ == LedBlinkMode::Slow) {
+            return SLOW_DURATION_MS;
+        }
+
+        const bool long_phase = (mode_ == LedBlinkMode::LongOnShortOff && is_on_)
+                                || (mode_ == LedBlinkMode::LongOffShortOn && !is_on_);
+        return long_phase ? LONG_DURATION_MS : SHORT_DURATION_MS;
     }
 
     LedBlinkMode mode_ = LedBlinkMode::Off;

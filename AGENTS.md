@@ -6,9 +6,9 @@
 - Board power input: 90–250 V AC
 - Onboard relay: GPIO16
 - Onboard LED (`LedLink`): GPIO23
-- MAX6675 SO / MISO: GPIO25
-- MAX6675 SCK: GPIO32
-- MAX6675 CS: GPIO34
+- MAX6675 SO / MISO: GPIO25   yellow
+- MAX6675 SCK: GPIO32         orange
+- MAX6675 CS: GPIO27          braun
 
 Never connect or use the programming interface while the board is powered from mains voltage. Programming/debugging must only be performed while the board is disconnected from mains and powered through an appropriate low-voltage programming/debug setup.
 

@@ -2,8 +2,8 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-
 #include "led_blinker.hpp"
+#include "temperature_acquisition.hpp"
 
 namespace {
 
@@ -13,12 +13,14 @@ constexpr char TAG[] = "reflow_pilot";
 
 }  // namespace
 
-extern "C" void app_main()
-{
+extern "C" void app_main() {
     ESP_ERROR_CHECK(gpio_reset_pin(LED_LINK_GPIO));
     ESP_ERROR_CHECK(gpio_set_direction(LED_LINK_GPIO, GPIO_MODE_OUTPUT));
 
     ESP_LOGI(TAG, "Blinking LedLink on GPIO%d", LED_LINK_GPIO);
+
+    static reflow_pilot::TemperatureAcquisition temperature_acquisition;
+    ESP_ERROR_CHECK(temperature_acquisition.start());
 
     reflow_pilot::LedBlinker led_blinker(reflow_pilot::LedBlinkMode::Slow);
 
