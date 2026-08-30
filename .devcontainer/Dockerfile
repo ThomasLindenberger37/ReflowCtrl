@@ -61,6 +61,7 @@ RUN apt-get update \
         libffi-dev \
         libssl-dev \
         libusb-1.0-0 \
+        usbutils \
         dfu-util \
     && ln -s /usr/bin/fdfind /usr/local/bin/fd \
     && git lfs install --system \
