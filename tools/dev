@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+project_root="$(cd -- "${script_dir}/.." && pwd)"
+build_dir="${BUILD_DIR:-${project_root}/build}"
+
+cd "${project_root}"
+
+mapfile -t c_format_files < <(
+    rg --files \
+        -g '*.c' -g '*.cc' -g '*.cpp' -g '*.cxx' \
+        -g '*.h' -g '*.hh' -g '*.hpp' -g '*.hxx' || true
+)
+
+c_translation_units=()
+for source_file in "${c_format_files[@]}"; do
+    case "${source_file}" in
+        *.c | *.cc | *.cpp | *.cxx) c_translation_units+=("${source_file}") ;;
+    esac
+done
+
+format_sources() {
+    if ((${#c_format_files[@]})); then
+        clang-format -i "${c_format_files[@]}"
+    else
+        echo "No C/C++ files to format."
+    fi
+
+    uv run ruff format .
+}
+
+check_formatting() {
+    if ((${#c_format_files[@]})); then
+        clang-format --dry-run --Werror "${c_format_files[@]}"
+    else
+        echo "No C/C++ files to check."
+    fi
+
+    uv run ruff format --check .
+}
+
+run_clang_tidy() {
+    if ((${#c_translation_units[@]} == 0)); then
+        echo "No C/C++ translation units to analyze."
+    elif [[ ! -f "${build_dir}/compile_commands.json" ]]; then
+        echo "Skipping clang-tidy: run 'tools/dev build' to generate build/compile_commands.json."
+    else
+        clang-tidy -p "${build_dir}" "${c_translation_units[@]}"
+    fi
+}
+
+run_cppcheck() {
+    local cppcheck_flags=(
+        "--enable=warning,performance,portability"
+        --check-level=normal
+        --inline-suppr
+        --suppress=missingIncludeSystem
+        --error-exitcode=1
+    )
+
+    if ((${#c_translation_units[@]} == 0)); then
+        echo "No C/C++ translation units to analyze."
+    elif [[ -f "${build_dir}/compile_commands.json" ]]; then
+        cppcheck "${cppcheck_flags[@]}" \
+            --project="${build_dir}/compile_commands.json" \
+            --file-filter="${project_root}/*"
+    else
+        cppcheck "${cppcheck_flags[@]}" "${c_translation_units[@]}"
+    fi
+}
+
+usage() {
+    cat <<'EOF'
+Usage: tools/dev <command>
+
+Commands:
+  build         Build with idf.py (CMake and Ninja)
+  clean         Remove ESP-IDF build output
+  format        Format project C/C++ and Python files
+  format-check  Check formatting without changing files
+  lint          Run all formatting and static-analysis checks
+  clang-tidy    Run clang-tidy using build/compile_commands.json
+  cppcheck      Run cppcheck, using the compile database when available
+  python-lint   Run Ruff checks
+  tools         Synchronize the locked uv tooling environment
+EOF
+}
+
+command_name="${1:-}"
+
+case "${command_name}" in
+    build)
+        idf.py build
+        ;;
+    clean)
+        idf.py fullclean
+        ;;
+    format)
+        format_sources
+        ;;
+    format-check)
+        check_formatting
+        ;;
+    clang-tidy)
+        run_clang_tidy
+        ;;
+    cppcheck)
+        run_cppcheck
+        ;;
+    python-lint)
+        uv run ruff check .
+        ;;
+    lint)
+        check_formatting
+        uv run ruff check .
+        run_clang_tidy
+        run_cppcheck
+        ;;
+    tools)
+        uv sync --locked
+        ;;
+    -h | --help | help)
+        usage
+        ;;
+    *)
+        usage >&2
+        exit 2
+        ;;
+esac

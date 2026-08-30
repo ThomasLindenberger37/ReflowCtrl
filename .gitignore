@@ -1,0 +1,28 @@
+# ESP-IDF generated files. Keep sdkconfig and dependencies.lock versioned.
+/build/
+/managed_components/
+/compile_commands.json
+sdkconfig.old
+
+# Python environments and caches.
+/.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Editor and operating-system temporary files.
+/.clangd/
+/.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Local-only environment configuration.
+.env
+.env.*
+!.env.example

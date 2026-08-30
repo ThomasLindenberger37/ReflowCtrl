@@ -1,33 +1,38 @@
 {
-  "name": "ReflowCtrl development",
+  "name": "ESP32 DevContainer",
   "build": {
     "dockerfile": "Dockerfile",
-    "args": {
-      "USERNAME": "vscode",
-      "USER_UID": "1000",
-      "USER_GID": "1000"
-    }
+    "target": "base"
+  },
+  "runArgs": [
+    "--network=host"
+  ],
+  "privileged": true,
+  "mounts": [
+    "source=/dev/bus/usb,target=/dev/bus/usb,type=bind",
+    "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,type=bind,readonly"
+  ],
+  "containerEnv": {
+    "ESPPORT": "/dev/ttyACM0",
+    "ESPBAUD": "115200"
   },
   "remoteUser": "vscode",
-  "containerUser": "vscode",
-  "updateRemoteUserUID": true,
-  "mounts": [
-    "source=reflowctrl-ccache,target=/home/vscode/.cache/ccache,type=volume"
-  ],
+  "updateRemoteUserUID": false,
   "customizations": {
     "vscode": {
       "extensions": [
         "ms-vscode.cpptools",
-        "ms-vscode.cmake-tools",
-        "ms-python.python",
-        "xaver.clang-format",
-        "espressif.esp-idf-extension"
+        "ms-vscode.cmake-tools"
       ],
       "settings": {
-        "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
-        "C_Cpp.clang_format_style": "file",
-        "cmake.configureOnOpen": false,
-        "python.defaultInterpreterPath": "/usr/bin/python3"
+        "C_Cpp.default.compilerPath": "/opt/esp/xtensa-lx106-elf/bin/xtensa-lx106-elf-gcc",
+        "cmake.generator": "Ninja",
+        "terminal.integrated.profiles.linux": {
+          "zsh": {
+            "path": "/usr/bin/zsh"
+          }
+        },
+        "terminal.integrated.defaultProfile.linux": "zsh"
       }
     }
   }

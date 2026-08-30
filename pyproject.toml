@@ -1,0 +1,22 @@
+[project]
+name = "reflowctrl-tools"
+version = "0.1.0"
+description = "Project-specific developer tooling for ReflowCtrl"
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "ruff>=0.12,<1",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = ["build", "managed_components"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

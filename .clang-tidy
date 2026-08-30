@@ -1,0 +1,14 @@
+---
+Checks: >
+  -*,
+  clang-analyzer-*,
+  bugprone-*,
+  performance-*,
+  portability-*,
+  -bugprone-easily-swappable-parameters
+WarningsAsErrors: ''
+HeaderFilterRegex: '.*'
+ExcludeHeaderFilterRegex: '^/opt/esp-idf/'
+SystemHeaders: false
+FormatStyle: file
+...
