@@ -1,0 +1,25 @@
+# Keep interactive shell state local to the developer account.
+HISTFILE=${ZDOTDIR:-$HOME}/.zsh_history
+HISTSIZE=10000
+SAVEHIST=10000
+setopt HIST_IGNORE_DUPS
+setopt SHARE_HISTORY
+
+autoload -Uz compinit && compinit
+
+autoload -Uz vcs_info
+precmd() { vcs_info }
+setopt PROMPT_SUBST
+zstyle ':vcs_info:git:*' formats ' (%b)'
+PROMPT='%F{green}%n@%m%f:%F{blue}%~%f%F{yellow}${vcs_info_msg_0_}%f %# '
+
+alias ll='ls -lah'
+alias la='ls -A'
+alias g='git'
+
+# Activate the ESP-IDF toolchain installed in the image for interactive shells.
+if [[ -r ${IDF_PATH}/export.sh ]]; then
+  if ! source "${IDF_PATH}/export.sh" >/dev/null 2>&1; then
+    print -u2 -- 'Failed to activate the ESP-IDF environment.'
+  fi
+fi

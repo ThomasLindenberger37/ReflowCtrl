@@ -1,0 +1,34 @@
+{
+  "name": "ReflowCtrl development",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "args": {
+      "USERNAME": "vscode",
+      "USER_UID": "1000",
+      "USER_GID": "1000"
+    }
+  },
+  "remoteUser": "vscode",
+  "containerUser": "vscode",
+  "updateRemoteUserUID": true,
+  "mounts": [
+    "source=reflowctrl-ccache,target=/home/vscode/.cache/ccache,type=volume"
+  ],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools",
+        "ms-python.python",
+        "xaver.clang-format",
+        "espressif.esp-idf-extension"
+      ],
+      "settings": {
+        "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+        "C_Cpp.clang_format_style": "file",
+        "cmake.configureOnOpen": false,
+        "python.defaultInterpreterPath": "/usr/bin/python3"
+      }
+    }
+  }
+}
