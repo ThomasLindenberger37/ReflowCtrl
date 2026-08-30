@@ -12,6 +12,10 @@
 
 Never connect or use the programming interface while the board is powered from mains voltage. Programming/debugging must only be performed while the board is disconnected from mains and powered through an appropriate low-voltage programming/debug setup.
 
+## Source Language
+
+- Use C++ source files (`.cpp`) and C++ header files (`.hpp`) for project code.
+
 
 C++ File Conventions
 
