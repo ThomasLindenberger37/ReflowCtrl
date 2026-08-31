@@ -16,6 +16,7 @@ name = "reflowctrl-tools"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "ifaddr" },
     { name = "zeroconf" },
 ]
 
@@ -25,7 +26,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "zeroconf", specifier = ">=0.147,<1" }]
+requires-dist = [
+    { name = "ifaddr", specifier = ">=0.2,<1" },
+    { name = "zeroconf", specifier = ">=0.147,<1" },
+]
 
 [package.metadata.requires-dev]
 dev = [{ name = "ruff", specifier = ">=0.12,<1" }]

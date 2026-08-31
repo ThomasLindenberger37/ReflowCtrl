@@ -111,12 +111,14 @@ installiert werden:
 uv sync
 ```
 
-Danach den Server im Devcontainer aus dem Projektverzeichnis starten. Bei mehreren Adaptern wird
-die IPv4-Adresse des Windows-LAN-Adapters explizit angegeben:
+Danach den Server im Devcontainer aus dem Projektverzeichnis starten:
 
 ```sh
-uv run python ota_server/server.py --address 192.168.0.40
+uv run python ota_server/server.py
 ```
+
+Der Server erkennt die aktiven IPv4-Netzwerkschnittstellen automatisch und veröffentlicht den
+Hostnamen per mDNS. Eine feste oder beim Start angegebene IP-Adresse ist nicht erforderlich.
 
 Der Server verwendet standardmäßig `build/reflowCtrl.bin` und TCP-Port 8070. Eine typische
 Ausgabe sieht so aus:
@@ -127,9 +129,12 @@ Advertising 192.168.1.20; server exits after ESP confirmation
 ```
 
 Nun sind keine weiteren Eingaben erforderlich. Spätestens beim nächsten Fünf-Sekunden-Intervall
-findet der ESP den Server und startet das Update. Nach erfolgreicher Übertragung erscheint:
+findet der ESP den Server und startet das Update. Während der Übertragung zeigt der Server den
+Fortschritt als Prozentwert und als Anzahl der übertragenen Bytes an. Nach erfolgreicher
+Übertragung erscheint beispielsweise:
 
 ```text
+Downloading firmware: 100.00% (1,234,567/1,234,567 bytes)
 Firmware transferred (... bytes); waiting for ESP confirmation
 ESP confirmed the update; server stopped
 ```
@@ -157,13 +162,6 @@ uv run python ota_server/server.py --port 8080
 Der Port muss dann auch unter `ReflowCtrl network configuration` in `idf.py menuconfig` auf
 denselben Wert gesetzt und diese Änderung zunächst auf dem ESP installiert werden.
 
-Bei Rechnern mit mehreren Netzwerkadaptern kann die zu veröffentlichende IPv4-Adresse explizit
-angegeben werden:
-
-```sh
-uv run python ota_server/server.py --address 192.168.1.20
-```
-
 ## Update abbrechen
 
 Solange noch kein Update übertragen wird, kann der Server mit `Ctrl+C` beendet werden. Während der
@@ -175,7 +173,7 @@ ESP die Firmware schreibt, sollten weder Server noch ESP ausgeschaltet werden.
 
 - Prüfen, ob Rechner und ESP im selben WLAN beziehungsweise lokalen Netz sind.
 - UDP-Port 5353 und TCP-Port 8070 in der Firewall freigeben.
-- Bei mehreren Netzwerkadaptern den Server mit `--address` starten.
+- In der Serverausgabe prüfen, ob die LAN-Adresse unter `Advertising on ...` aufgeführt wird.
 - Prüfen, ob `reflow-ota-server.local` vom Entwicklungsrechner per mDNS veröffentlicht wird.
 - Die serielle ESP-Ausgabe auf WLAN- oder OTA-Fehler kontrollieren.
 

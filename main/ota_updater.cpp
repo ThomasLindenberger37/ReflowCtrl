@@ -22,15 +22,15 @@ constexpr TickType_t CONFIRM_RETRY_PERIOD = pdMS_TO_TICKS(1000);
 constexpr uint32_t TASK_STACK_SIZE = 8192;
 constexpr UBaseType_t TASK_PRIORITY = 5;
 
-std::array<char, 192> make_url(const char* path) {
+std::array<char, 192> make_url(const char* host, const char* path) {
     std::array<char, 192> url{};
-    std::snprintf(url.data(), url.size(), "http://%s:%d%s", CONFIG_REFLOW_OTA_SERVER_HOSTNAME,
-                  CONFIG_REFLOW_OTA_SERVER_PORT, path);
+    std::snprintf(url.data(), url.size(), "http://%s:%d%s", host, CONFIG_REFLOW_OTA_SERVER_PORT,
+                  path);
     return url;
 }
 
-bool confirm_update() {
-    const auto url = make_url("/complete");
+bool confirm_update_with_host(const char* host) {
+    const auto url = make_url(host, "/complete");
     esp_http_client_config_t config{};
     config.url = url.data();
     config.timeout_ms = 3000;
@@ -48,28 +48,64 @@ bool confirm_update() {
     return result == ESP_OK && status == 200;
 }
 
-void ota_task(void*) {
-    const auto firmware_url = make_url("/firmware.bin");
+bool confirm_update() {
+    constexpr std::array<const char*, 2> hosts = {
+        CONFIG_REFLOW_OTA_SERVER_HOSTNAME,
+        "reflow_ota_server.local",
+    };
 
+    for (const char* host : hosts) {
+        if (confirm_update_with_host(host)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool ota_update_with_host(const char* host) {
+    const auto firmware_url = make_url(host, "/firmware.bin");
+
+    esp_http_client_config_t http_config{};
+    http_config.url = firmware_url.data();
+    http_config.timeout_ms = 5000;
+    http_config.keep_alive_enable = true;
+
+    esp_https_ota_config_t ota_config{};
+    ota_config.http_config = &http_config;
+
+    const esp_err_t result = esp_https_ota(&ota_config);
+    if (result == ESP_OK) {
+        return true;
+    }
+
+    if (result != ESP_ERR_HTTP_CONNECT) {
+        ESP_LOGW(TAG, "OTA check failed for %s: %s", host, esp_err_to_name(result));
+    }
+    return false;
+}
+
+void ota_task(void*) {
     while (true) {
         if (!is_wifi_connected()) {
             vTaskDelay(CHECK_PERIOD);
             continue;
         }
 
-        esp_http_client_config_t http_config{};
-        http_config.url = firmware_url.data();
-        http_config.timeout_ms = 5000;
-        http_config.keep_alive_enable = true;
+        constexpr std::array<const char*, 2> hosts = {
+            CONFIG_REFLOW_OTA_SERVER_HOSTNAME,
+            "reflow_ota_server.local",
+        };
 
-        esp_https_ota_config_t ota_config{};
-        ota_config.http_config = &http_config;
-
-        const esp_err_t result = esp_https_ota(&ota_config);
-        if (result != ESP_OK) {
-            if (result != ESP_ERR_HTTP_CONNECT) {
-                ESP_LOGW(TAG, "OTA check failed: %s", esp_err_to_name(result));
+        bool downloaded = false;
+        for (const char* host : hosts) {
+            if (ota_update_with_host(host)) {
+                downloaded = true;
+                break;
             }
+        }
+
+        if (!downloaded) {
             vTaskDelay(CHECK_PERIOD);
             continue;
         }
