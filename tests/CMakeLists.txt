@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(reflow_pilot_unit_tests LANGUAGES CXX)
+project(reflowCtrl_unit_tests LANGUAGES CXX)
 
 include(FetchContent)
 

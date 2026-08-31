@@ -1,0 +1,12 @@
+menu "ReflowCtrl network configuration"
+
+config REFLOW_OTA_SERVER_HOSTNAME
+    string "OTA server hostname or IP"
+    default "192.168.0.40"
+
+config REFLOW_OTA_SERVER_PORT
+    int "OTA server HTTP port"
+    range 1 65535
+    default 8070
+
+endmenu

@@ -3,13 +3,15 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "led_blinker.hpp"
+#include "ota_updater.hpp"
 #include "temperature_acquisition.hpp"
+#include "wifi_station.hpp"
 
 namespace {
 
 constexpr gpio_num_t LED_LINK_GPIO = GPIO_NUM_23;
 constexpr TickType_t UPDATE_PERIOD = pdMS_TO_TICKS(10);
-constexpr char TAG[] = "reflow_pilot";
+constexpr char TAG[] = "reflowCtrl";
 
 }  // namespace
 
@@ -19,10 +21,16 @@ extern "C" void app_main() {
 
     ESP_LOGI(TAG, "Blinking LedLink on GPIO%d", LED_LINK_GPIO);
 
-    static reflow_pilot::TemperatureAcquisition temperature_acquisition;
+    ESP_LOGI(TAG, "Starting Wi-Fi station");
+    ESP_ERROR_CHECK(reflowCtrl::start_wifi_station());
+
+    ESP_LOGI(TAG, "Starting OTA updater");
+    ESP_ERROR_CHECK(reflowCtrl::start_ota_updater());
+
+    static reflowCtrl::TemperatureAcquisition temperature_acquisition;
     ESP_ERROR_CHECK(temperature_acquisition.start());
 
-    reflow_pilot::LedBlinker led_blinker(reflow_pilot::LedBlinkMode::Slow);
+    reflowCtrl::LedBlinker led_blinker(reflowCtrl::LedBlinkMode::Fast);
 
     while (true) {
         ESP_ERROR_CHECK(gpio_set_level(LED_LINK_GPIO, led_blinker.is_on()));

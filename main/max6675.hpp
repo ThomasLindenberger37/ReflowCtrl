@@ -5,7 +5,7 @@
 #include "driver/gpio.h"
 #include "esp_err.h"
 
-namespace reflow_pilot {
+namespace reflowCtrl {
 
 class Max6675 {
    public:
@@ -20,4 +20,4 @@ class Max6675 {
     [[nodiscard]] std::uint16_t read_frame() noexcept;
 };
 
-}  // namespace reflow_pilot
+}  // namespace reflowCtrl

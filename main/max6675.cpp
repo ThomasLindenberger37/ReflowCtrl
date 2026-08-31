@@ -5,7 +5,7 @@
 #include "esp_check.h"
 #include "esp_rom_sys.h"
 
-namespace reflow_pilot {
+namespace reflowCtrl {
 namespace {
 
 constexpr std::uint16_t THERMOCOUPLE_OPEN_BIT = 0x0004;
@@ -74,4 +74,4 @@ std::uint16_t Max6675::read_frame() noexcept {
     return frame;
 }
 
-}  // namespace reflow_pilot
+}  // namespace reflowCtrl

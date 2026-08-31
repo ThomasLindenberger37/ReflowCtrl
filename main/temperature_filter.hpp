@@ -3,7 +3,7 @@
 #include <array>
 #include <cstddef>
 
-namespace reflow_pilot {
+namespace reflowCtrl {
 
 class GaussianTemperatureFilter {
    public:
@@ -51,4 +51,4 @@ class GaussianTemperatureFilter {
     std::size_t sample_count_ = 0;
 };
 
-}  // namespace reflow_pilot
+}  // namespace reflowCtrl

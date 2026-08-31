@@ -3,7 +3,9 @@ name = "reflowctrl-tools"
 version = "0.1.0"
 description = "Project-specific developer tooling for ReflowCtrl"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "zeroconf>=0.147,<1",
+]
 
 [dependency-groups]
 dev = [

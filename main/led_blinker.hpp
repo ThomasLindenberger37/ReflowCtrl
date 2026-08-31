@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace reflow_pilot {
+namespace reflowCtrl {
 
 enum class LedBlinkMode : std::uint8_t {
     Fast,
@@ -71,4 +71,4 @@ class LedBlinker {
     bool is_on_ = false;
 };
 
-}  // namespace reflow_pilot
+}  // namespace reflowCtrl

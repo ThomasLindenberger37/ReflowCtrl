@@ -3,11 +3,12 @@
 #include "esp_check.h"
 #include "esp_log.h"
 
-namespace reflow_pilot {
+namespace reflowCtrl {
 namespace {
 
 constexpr char TAG[] = "temperature";
 constexpr TickType_t SAMPLE_PERIOD = pdMS_TO_TICKS(250);
+constexpr std::uint32_t SAMPLES_PER_LOG = 4;
 constexpr std::uint32_t TASK_STACK_SIZE = 4096;
 constexpr UBaseType_t TASK_PRIORITY = 5;
 
@@ -67,7 +68,6 @@ void TemperatureAcquisition::task_loop() noexcept {
     TickType_t last_wake_time = xTaskGetTickCount();
 
     // CS is high after initialization, which starts the first MAX6675 conversion.
-    // Do not interrupt it before the 250 ms conversion interval has elapsed.
     vTaskDelayUntil(&last_wake_time, SAMPLE_PERIOD);
 
     while (true) {
@@ -82,38 +82,55 @@ void TemperatureAcquisition::acquire_sample() noexcept {
     const esp_err_t result = sensor_.read_celsius(raw_temperature_celsius, raw_frame);
 
     if (result != ESP_OK) {
-        publish_error();
+        publish_error(result);
         return;
     }
 
     filter_.add_sample(raw_temperature_celsius);
     const float filtered_temperature_celsius = filter_.filtered_temperature();
-    ESP_LOGI(TAG, "MAX6675 frame: 0x%04X, raw: %.2f C, filtered: %.2f C",
-             static_cast<unsigned int>(raw_frame), static_cast<double>(raw_temperature_celsius),
-             static_cast<double>(filtered_temperature_celsius));
     publish_temperature(filtered_temperature_celsius);
+
+    ++successful_sample_count_;
+    if (successful_sample_count_ % SAMPLES_PER_LOG == 0) {
+        ESP_LOGI(TAG, "Temperature: %.2f C", static_cast<double>(filtered_temperature_celsius));
+    }
 }
 
 void TemperatureAcquisition::publish_temperature(const float temperature_celsius) noexcept {
     TemperatureCallback callback = nullptr;
     void* callback_context = nullptr;
+    bool recovered_from_sensor_error = false;
 
     portENTER_CRITICAL(&lock_);
+    recovered_from_sensor_error = status_ == TemperatureStatus::SensorError;
     latest_temperature_celsius_ = temperature_celsius;
     status_ = TemperatureStatus::Valid;
     callback = callback_;
     callback_context = callback_context_;
+    last_sensor_error_ = ESP_OK;
     portEXIT_CRITICAL(&lock_);
+
+    if (recovered_from_sensor_error) {
+        ESP_LOGI(TAG, "MAX6675 readings recovered");
+    }
 
     if (callback != nullptr) {
         callback(temperature_celsius, callback_context);
     }
 }
 
-void TemperatureAcquisition::publish_error() noexcept {
+void TemperatureAcquisition::publish_error(const esp_err_t error) noexcept {
+    bool should_log_error = false;
+
     portENTER_CRITICAL(&lock_);
+    should_log_error = status_ != TemperatureStatus::SensorError || last_sensor_error_ != error;
     status_ = TemperatureStatus::SensorError;
+    last_sensor_error_ = error;
     portEXIT_CRITICAL(&lock_);
+
+    if (should_log_error) {
+        ESP_LOGW(TAG, "MAX6675 read failed: %s", esp_err_to_name(error));
+    }
 }
 
-}  // namespace reflow_pilot
+}  // namespace reflowCtrl

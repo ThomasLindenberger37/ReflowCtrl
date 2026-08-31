@@ -9,7 +9,7 @@
 #include "max6675.hpp"
 #include "temperature_filter.hpp"
 
-namespace reflow_pilot {
+namespace reflowCtrl {
 
 enum class TemperatureStatus : std::uint8_t {
     NoMeasurement,
@@ -40,7 +40,7 @@ class TemperatureAcquisition {
     void task_loop() noexcept;
     void acquire_sample() noexcept;
     void publish_temperature(float temperature_celsius) noexcept;
-    void publish_error() noexcept;
+    void publish_error(esp_err_t error) noexcept;
 
     Max6675 sensor_;
     GaussianTemperatureFilter filter_;
@@ -50,6 +50,8 @@ class TemperatureAcquisition {
     TemperatureStatus status_ = TemperatureStatus::NoMeasurement;
     TemperatureCallback callback_ = nullptr;
     void* callback_context_ = nullptr;
+    esp_err_t last_sensor_error_ = ESP_OK;
+    std::uint32_t successful_sample_count_ = 0;
 };
 
-}  // namespace reflow_pilot
+}  // namespace reflowCtrl

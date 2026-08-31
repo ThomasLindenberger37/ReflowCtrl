@@ -2,6 +2,19 @@ idf_component_register(
     SRCS
         "main.cpp"
         "max6675.cpp"
+        "ota_updater.cpp"
         "temperature_acquisition.cpp"
+        "wifi_station.cpp"
     INCLUDE_DIRS "."
+    REQUIRES
+        app_update
+        bootloader_support
+        esp_driver_gpio
+        esp_driver_spi
+        esp_event
+        esp_http_client
+        esp_https_ota
+        esp_netif
+        esp_wifi
+        nvs_flash
 )

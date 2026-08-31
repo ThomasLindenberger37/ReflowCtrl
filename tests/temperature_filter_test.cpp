@@ -2,7 +2,7 @@
 
 #include "gtest/gtest.h"
 
-namespace reflow_pilot {
+namespace reflowCtrl {
 namespace {
 
 TEST(GaussianTemperatureFilterTest, HasNoSamplesInitially) {
@@ -51,4 +51,4 @@ TEST(GaussianTemperatureFilterTest, DropsSamplesOlderThanFourIntervals) {
 }
 
 }  // namespace
-}  // namespace reflow_pilot
+}  // namespace reflowCtrl
