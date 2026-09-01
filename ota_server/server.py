@@ -4,6 +4,7 @@ import argparse
 import ipaddress
 import socket
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -16,10 +17,37 @@ DEFAULT_PORT = 8070
 TRANSFER_CHUNK_SIZE = 64 * 1024
 
 
-def show_download_progress(transferred: int, total: int) -> None:
+def format_byte_count(byte_count: float) -> str:
+    value = byte_count
+    for unit in ("B", "KiB", "MiB", "GiB"):
+        if value < 1024 or unit == "GiB":
+            precision = 0 if unit == "B" else 2
+            return f"{value:.{precision}f} {unit}"
+        value /= 1024
+    raise AssertionError("unreachable")
+
+
+def format_duration(seconds: float) -> str:
+    total_seconds = max(0, round(seconds))
+    minutes, seconds = divmod(total_seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours:d}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes:02d}:{seconds:02d}"
+
+
+def show_download_progress(transferred: int, total: int, started_at: float) -> None:
     percentage = transferred * 100 / total
+    elapsed = time.monotonic() - started_at
+    transfer_rate = transferred / elapsed if elapsed > 0 else 0.0
+    remaining = (total - transferred) / transfer_rate if transfer_rate > 0 else None
+    eta = format_duration(remaining) if remaining is not None else "--:--"
     print(
-        f"\rDownloading firmware: {percentage:6.2f}% ({transferred:,}/{total:,} bytes)",
+        f"\rDownloading firmware: {percentage:6.2f}% | "
+        f"{format_byte_count(transferred)} / {format_byte_count(total)} "
+        f"({transferred:,} / {total:,} bytes) | "
+        f"{format_byte_count(transfer_rate)}/s | "
+        f"elapsed {format_duration(elapsed)} | ETA {eta}",
         end="",
         flush=True,
     )
@@ -76,20 +104,32 @@ class UpdateRequestHandler(BaseHTTPRequestHandler):
 
         try:
             transferred = 0
-            show_download_progress(transferred, firmware_size)
+            started_at = time.monotonic()
+            show_download_progress(transferred, firmware_size, started_at)
             with self.server.firmware.open("rb") as firmware_file:
                 while chunk := firmware_file.read(TRANSFER_CHUNK_SIZE):
                     self.wfile.write(chunk)
                     transferred += len(chunk)
-                    show_download_progress(transferred, firmware_size)
+                    show_download_progress(transferred, firmware_size, started_at)
             self.wfile.flush()
             print()
             self.server.download_finished = True
-            print(f"Firmware transferred ({firmware_size} bytes); waiting for ESP confirmation")
+            elapsed = time.monotonic() - started_at
+            average_rate = firmware_size / elapsed if elapsed > 0 else 0.0
+            print(
+                f"Firmware transferred: {format_byte_count(firmware_size)} "
+                f"({firmware_size:,} bytes) in {format_duration(elapsed)} "
+                f"at an average of {format_byte_count(average_rate)}/s; "
+                "waiting for ESP confirmation"
+            )
         except (BrokenPipeError, ConnectionResetError):
             print()
             self.server.download_finished = False
-            print("ESP disconnected before the transfer completed")
+            elapsed = time.monotonic() - started_at
+            print(
+                f"ESP disconnected after {format_byte_count(transferred)} "
+                f"({transferred * 100 / firmware_size:.2f}%) in {format_duration(elapsed)}"
+            )
 
     def do_POST(self) -> None:  # noqa: N802
         if self.path != "/complete":

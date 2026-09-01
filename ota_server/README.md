@@ -130,12 +130,13 @@ Advertising 192.168.1.20; server exits after ESP confirmation
 
 Nun sind keine weiteren Eingaben erforderlich. Spätestens beim nächsten Fünf-Sekunden-Intervall
 findet der ESP den Server und startet das Update. Während der Übertragung zeigt der Server den
-Fortschritt als Prozentwert und als Anzahl der übertragenen Bytes an. Nach erfolgreicher
-Übertragung erscheint beispielsweise:
+Fortschritt als Prozentwert, übertragene Datenmenge, exakte Byte-Anzahl,
+Durchschnittsgeschwindigkeit, Laufzeit und geschätzte Restzeit an. Nach erfolgreicher Übertragung
+erscheint beispielsweise:
 
 ```text
-Downloading firmware: 100.00% (1,234,567/1,234,567 bytes)
-Firmware transferred (... bytes); waiting for ESP confirmation
+Downloading firmware: 100.00% | 1.18 MiB / 1.18 MiB (1,234,567 / 1,234,567 bytes) | 602.82 KiB/s | elapsed 00:02 | ETA 00:00
+Firmware transferred: 1.18 MiB (1,234,567 bytes) in 00:02 at an average of 602.77 KiB/s; waiting for ESP confirmation
 ESP confirmed the update; server stopped
 ```
 
