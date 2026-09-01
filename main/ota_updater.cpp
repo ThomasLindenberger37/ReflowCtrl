@@ -17,7 +17,7 @@ namespace reflowCtrl {
 namespace {
 
 constexpr char TAG[] = "ota_updater";
-constexpr TickType_t CHECK_PERIOD = pdMS_TO_TICKS(5000);
+constexpr TickType_t CHECK_PERIOD = pdMS_TO_TICKS(1000);
 constexpr TickType_t CONFIRM_RETRY_PERIOD = pdMS_TO_TICKS(1000);
 constexpr uint32_t TASK_STACK_SIZE = 8192;
 constexpr UBaseType_t TASK_PRIORITY = 5;
@@ -49,18 +49,7 @@ bool confirm_update_with_host(const char* host) {
 }
 
 bool confirm_update() {
-    constexpr std::array<const char*, 2> hosts = {
-        CONFIG_REFLOW_OTA_SERVER_HOSTNAME,
-        "reflow_ota_server.local",
-    };
-
-    for (const char* host : hosts) {
-        if (confirm_update_with_host(host)) {
-            return true;
-        }
-    }
-
-    return false;
+    return confirm_update_with_host(CONFIG_REFLOW_OTA_SERVER_HOSTNAME);
 }
 
 bool ota_update_with_host(const char* host) {
@@ -92,20 +81,7 @@ void ota_task(void*) {
             continue;
         }
 
-        constexpr std::array<const char*, 2> hosts = {
-            CONFIG_REFLOW_OTA_SERVER_HOSTNAME,
-            "reflow_ota_server.local",
-        };
-
-        bool downloaded = false;
-        for (const char* host : hosts) {
-            if (ota_update_with_host(host)) {
-                downloaded = true;
-                break;
-            }
-        }
-
-        if (!downloaded) {
+        if (!ota_update_with_host(CONFIG_REFLOW_OTA_SERVER_HOSTNAME)) {
             vTaskDelay(CHECK_PERIOD);
             continue;
         }

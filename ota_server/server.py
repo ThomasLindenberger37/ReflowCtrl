@@ -12,7 +12,6 @@ import ifaddr
 from zeroconf import IPVersion, ServiceInfo, Zeroconf
 
 DEFAULT_HOSTNAME = "reflow-ota-server.local."
-LEGACY_HOSTNAME = "reflow_ota_server.local."
 DEFAULT_PORT = 8070
 TRANSFER_CHUNK_SIZE = 64 * 1024
 
@@ -171,14 +170,6 @@ def register_services(address: str, port: int) -> tuple[Zeroconf, list[ServiceIn
             port=port,
             properties={"path": "/firmware.bin"},
             server=DEFAULT_HOSTNAME,
-        ),
-        ServiceInfo(
-            "_http._tcp.local.",
-            f"ReflowCtrl OTA legacy ({address})._http._tcp.local.",
-            addresses=[socket.inet_aton(address)],
-            port=port,
-            properties={"path": "/firmware.bin"},
-            server=LEGACY_HOSTNAME,
         ),
     ]
     zeroconf = Zeroconf(interfaces=[address], ip_version=IPVersion.V4Only)

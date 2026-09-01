@@ -1,10 +1,12 @@
-#pragma once
+#ifndef REFLOWCTRL_LED_BLINKER_HPP
+#define REFLOWCTRL_LED_BLINKER_HPP
 
 #include <cstdint>
 
 namespace reflowCtrl {
 
 enum class LedBlinkMode : std::uint8_t {
+    TenHertz,
     Fast,
     Slow,
     LongOnShortOff,
@@ -15,6 +17,7 @@ enum class LedBlinkMode : std::uint8_t {
 
 class LedBlinker {
    public:
+    static constexpr std::uint32_t TEN_HERTZ_PHASE_DURATION_MS = 50;
     static constexpr std::uint32_t FAST_DURATION_MS = 200;
     static constexpr std::uint32_t SLOW_DURATION_MS = 1000;
     static constexpr std::uint32_t LONG_DURATION_MS = 1000;
@@ -53,6 +56,10 @@ class LedBlinker {
 
    private:
     [[nodiscard]] std::uint32_t current_phase_duration_ms() const noexcept {
+        if (mode_ == LedBlinkMode::TenHertz) {
+            return TEN_HERTZ_PHASE_DURATION_MS;
+        }
+
         if (mode_ == LedBlinkMode::Fast) {
             return FAST_DURATION_MS;
         }
@@ -72,3 +79,5 @@ class LedBlinker {
 };
 
 }  // namespace reflowCtrl
+
+#endif  // REFLOWCTRL_LED_BLINKER_HPP

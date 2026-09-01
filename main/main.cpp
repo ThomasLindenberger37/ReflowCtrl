@@ -30,7 +30,7 @@ extern "C" void app_main() {
     static reflowCtrl::TemperatureAcquisition temperature_acquisition;
     ESP_ERROR_CHECK(temperature_acquisition.start());
 
-    reflowCtrl::LedBlinker led_blinker(reflowCtrl::LedBlinkMode::LongOnShortOff);
+    reflowCtrl::LedBlinker led_blinker(reflowCtrl::LedBlinkMode::TenHertz);
 
     while (true) {
         ESP_ERROR_CHECK(gpio_set_level(LED_LINK_GPIO, led_blinker.is_on()));

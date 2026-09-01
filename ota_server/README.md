@@ -128,7 +128,7 @@ Serving .../build/reflowCtrl.bin at http://reflow-ota-server.local:8070/firmware
 Advertising 192.168.1.20; server exits after ESP confirmation
 ```
 
-Nun sind keine weiteren Eingaben erforderlich. Spätestens beim nächsten Fünf-Sekunden-Intervall
+Nun sind keine weiteren Eingaben erforderlich. Spätestens beim nächsten Ein-Sekunden-Intervall
 findet der ESP den Server und startet das Update. Während der Übertragung zeigt der Server den
 Fortschritt als Prozentwert, übertragene Datenmenge, exakte Byte-Anzahl,
 Durchschnittsgeschwindigkeit, Laufzeit und geschätzte Restzeit an. Nach erfolgreicher Übertragung
@@ -141,10 +141,6 @@ ESP confirmed the update; server stopped
 ```
 
 Der Serverprozess endet anschließend selbstständig.
-
-Für die Migration bereits installierter Firmware veröffentlicht der Server zusätzlich den früheren
-Namen `reflow_ota_server.local`. Nach diesem Update verwendet der ESP den neuen Hostnamen mit
-Bindestrichen.
 
 ## Eigenes Firmware-Image verwenden
 
