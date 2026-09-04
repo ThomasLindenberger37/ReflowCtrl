@@ -1,6 +1,7 @@
 #ifndef REFLOWCTRL_LED_BLINKER_HPP
 #define REFLOWCTRL_LED_BLINKER_HPP
 
+#include <atomic>
 #include <cstdint>
 
 namespace reflowCtrl {
@@ -28,20 +29,24 @@ class LedBlinker {
     }
 
     void set_mode(const LedBlinkMode mode) noexcept {
-        mode_ = mode;
-        phase_elapsed_ms_ = 0;
-        is_on_ = mode != LedBlinkMode::Off && mode != LedBlinkMode::LongOffShortOn;
+        requested_mode_.store(mode);
+        apply_mode(mode);
     }
 
-    [[nodiscard]] LedBlinkMode mode() const noexcept {
-        return mode_;
+    void request_mode(const LedBlinkMode mode) noexcept {
+        requested_mode_.store(mode);
     }
 
-    [[nodiscard]] bool is_on() const noexcept {
-        return is_on_;
+    void apply_requested_mode() noexcept {
+        const LedBlinkMode requested_mode = requested_mode_.load();
+        if (requested_mode != mode_) {
+            apply_mode(requested_mode);
+        }
     }
 
     void advance(const std::uint32_t elapsed_ms) noexcept {
+        apply_requested_mode();
+
         if (mode_ == LedBlinkMode::On || mode_ == LedBlinkMode::Off) {
             return;
         }
@@ -54,7 +59,21 @@ class LedBlinker {
         }
     }
 
+    [[nodiscard]] LedBlinkMode mode() const noexcept {
+        return mode_;
+    }
+
+    [[nodiscard]] bool is_on() const noexcept {
+        return is_on_;
+    }
+
    private:
+    void apply_mode(const LedBlinkMode mode) noexcept {
+        mode_ = mode;
+        phase_elapsed_ms_ = 0;
+        is_on_ = mode != LedBlinkMode::Off && mode != LedBlinkMode::LongOffShortOn;
+    }
+
     [[nodiscard]] std::uint32_t current_phase_duration_ms() const noexcept {
         if (mode_ == LedBlinkMode::TenHertz) {
             return TEN_HERTZ_PHASE_DURATION_MS;
@@ -74,6 +93,7 @@ class LedBlinker {
     }
 
     LedBlinkMode mode_ = LedBlinkMode::Off;
+    std::atomic<LedBlinkMode> requested_mode_{LedBlinkMode::Off};
     std::uint32_t phase_elapsed_ms_ = 0;
     bool is_on_ = false;
 };

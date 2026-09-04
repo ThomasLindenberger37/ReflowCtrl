@@ -83,5 +83,18 @@ TEST(LedBlinkerTest, ChangingModeResetsThePhase) {
     EXPECT_TRUE(blinker.is_on());
 }
 
+TEST(LedBlinkerTest, AppliesRequestedModeOnNextAdvance) {
+    LedBlinker blinker(LedBlinkMode::Slow);
+
+    blinker.request_mode(LedBlinkMode::TenHertz);
+    EXPECT_EQ(blinker.mode(), LedBlinkMode::Slow);
+
+    blinker.advance(0);
+    EXPECT_EQ(blinker.mode(), LedBlinkMode::TenHertz);
+    EXPECT_TRUE(blinker.is_on());
+    blinker.advance(50);
+    EXPECT_FALSE(blinker.is_on());
+}
+
 }  // namespace
 }  // namespace reflowCtrl

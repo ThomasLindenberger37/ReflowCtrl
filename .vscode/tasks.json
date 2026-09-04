@@ -5,7 +5,12 @@
       "label": "ESP-IDF: Build",
       "type": "shell",
       "command": "env",
-      "args": ["-u", "ESPPORT", "idf.py", "build"],
+      "args": [
+        "-u",
+        "ESPPORT",
+        "idf.py",
+        "build"
+      ],
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -13,7 +18,9 @@
         "kind": "build",
         "isDefault": true
       },
-      "problemMatcher": ["$gcc"],
+      "problemMatcher": [
+        "$gcc"
+      ],
       "presentation": {
         "group": "esp-idf",
         "panel": "shared",
@@ -92,13 +99,19 @@
     {
       "label": "ESP-IDF: Build + Flash",
       "dependsOrder": "sequence",
-      "dependsOn": ["ESP-IDF: Build", "ESP-IDF: Flash"],
+      "dependsOn": [
+        "ESP-IDF: Build",
+        "ESP-IDF: Flash"
+      ],
       "problemMatcher": []
     },
     {
       "label": "ESP-IDF: Build + Flash + Monitor",
       "dependsOrder": "sequence",
-      "dependsOn": ["ESP-IDF: Build", "ESP-IDF: Flash + Monitor"],
+      "dependsOn": [
+        "ESP-IDF: Build",
+        "ESP-IDF: Flash + Monitor"
+      ],
       "problemMatcher": []
     },
     {
@@ -109,7 +122,9 @@
         "cwd": "${workspaceFolder}"
       },
       "group": "test",
-      "problemMatcher": ["$gcc"],
+      "problemMatcher": [
+        "$gcc"
+      ],
       "presentation": {
         "group": "unit-tests",
         "panel": "shared",
@@ -119,14 +134,51 @@
     {
       "label": "ESP-IDF: Build + Unit Tests",
       "dependsOrder": "sequence",
-      "dependsOn": ["ESP-IDF: Build", "Unit Tests: Build + Run"],
+      "dependsOn": [
+        "ESP-IDF: Build",
+        "Unit Tests: Build + Run"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "OTA: Start Server",
+      "type": "shell",
+      "command": "uv",
+      "args": [
+        "run",
+        "python",
+        "ota_server/server.py"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "group": "ota-server",
+        "panel": "dedicated",
+        "clear": true,
+        "focus": true
+      }
+    },
+    {
+      "label": "ESP-IDF: Build + OTA",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "ESP-IDF: Build",
+        "OTA: Start Server"
+      ],
       "problemMatcher": []
     },
     {
       "label": "ESP-IDF: Clean",
       "type": "shell",
       "command": "env",
-      "args": ["-u", "ESPPORT", "idf.py", "clean"],
+      "args": [
+        "-u",
+        "ESPPORT",
+        "idf.py",
+        "clean"
+      ],
       "options": {
         "cwd": "${workspaceFolder}"
       },

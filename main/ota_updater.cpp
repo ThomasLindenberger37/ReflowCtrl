@@ -30,6 +30,8 @@ struct OtaRequest {
 };
 
 QueueHandle_t ota_request_queue = nullptr;
+OtaStartedCallback ota_started_callback = nullptr;
+void* ota_started_callback_context = nullptr;
 
 std::array<char, 192> make_url(const char* host, const char* path) {
     std::array<char, 192> url{};
@@ -103,7 +105,7 @@ void ota_task(void*) {
 
 }  // namespace
 
-esp_err_t start_ota_updater() {
+esp_err_t start_ota_updater(OtaStartedCallback callback, void* callback_context) {
     ota_request_queue = xQueueCreate(1, sizeof(OtaRequest));
     if (ota_request_queue == nullptr) {
         return ESP_ERR_NO_MEM;
@@ -114,8 +116,12 @@ esp_err_t start_ota_updater() {
     if (result != pdPASS) {
         vQueueDelete(ota_request_queue);
         ota_request_queue = nullptr;
+        return ESP_ERR_NO_MEM;
     }
-    return result == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
+
+    ota_started_callback = callback;
+    ota_started_callback_context = callback_context;
+    return ESP_OK;
 }
 
 esp_err_t trigger_ota_update(const char* server_address) {
@@ -130,7 +136,14 @@ esp_err_t trigger_ota_update(const char* server_address) {
         return ESP_ERR_INVALID_ARG;
     }
 
-    return xQueueOverwrite(ota_request_queue, &request) == pdPASS ? ESP_OK : ESP_FAIL;
+    if (xQueueOverwrite(ota_request_queue, &request) != pdPASS) {
+        return ESP_FAIL;
+    }
+
+    if (ota_started_callback != nullptr) {
+        ota_started_callback(ota_started_callback_context);
+    }
+    return ESP_OK;
 }
 
 }  // namespace reflowCtrl
