@@ -4,13 +4,11 @@
 
 #include "esp_check.h"
 #include "esp_rom_sys.h"
+#include "max6675_frame.hpp"
 
 namespace reflowCtrl {
 namespace {
 
-constexpr std::uint16_t THERMOCOUPLE_OPEN_BIT = 0x0004;
-constexpr std::uint16_t DUMMY_SIGN_BIT = 0x8000;
-constexpr std::uint16_t DEVICE_ID_BIT = 0x0002;
 // Deliberately slow software SPI: 50 us high and 50 us low gives about 10 kHz.
 constexpr std::uint32_t CLOCK_DELAY_US = 50;
 
@@ -42,16 +40,16 @@ esp_err_t Max6675::initialize() noexcept {
 
 esp_err_t Max6675::read_celsius(float& temperature_celsius, std::uint16_t& raw_frame) noexcept {
     raw_frame = read_frame();
+    const Max6675FrameResult decoded_frame = decode_max6675_frame(raw_frame);
 
-    if ((raw_frame & (DUMMY_SIGN_BIT | DEVICE_ID_BIT)) != 0) {
+    if (decoded_frame.status == Max6675FrameStatus::Invalid) {
         return ESP_ERR_INVALID_RESPONSE;
     }
-
-    if ((raw_frame & THERMOCOUPLE_OPEN_BIT) != 0) {
+    if (decoded_frame.status == Max6675FrameStatus::ThermocoupleOpen) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    temperature_celsius = static_cast<float>(raw_frame >> 3U) * 0.25F;
+    temperature_celsius = decoded_frame.temperature_celsius;
     return ESP_OK;
 }
 
