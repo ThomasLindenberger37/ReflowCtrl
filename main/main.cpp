@@ -44,11 +44,11 @@ extern "C" void app_main() {
     ESP_LOGI(TAG, "Waiting for Wi-Fi address");
     reflowCtrl::wait_for_wifi_connection();
 
-    ESP_LOGI(TAG, "Starting web server");
-    ESP_ERROR_CHECK(reflowCtrl::start_web_server());
-
     static reflowCtrl::TemperatureAcquisition temperature_acquisition;
     ESP_ERROR_CHECK(temperature_acquisition.start());
+
+    ESP_LOGI(TAG, "Starting web server");
+    ESP_ERROR_CHECK(reflowCtrl::start_web_server(temperature_acquisition));
 
     while (true) {
         ESP_ERROR_CHECK(gpio_set_level(LED_LINK_GPIO, led_blinker.is_on()));

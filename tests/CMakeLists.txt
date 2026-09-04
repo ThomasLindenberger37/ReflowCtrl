@@ -18,6 +18,7 @@ add_executable(
     led_blinker_test
     led_blinker_test.cpp
     ipv4_address_test.cpp
+    log_buffer_test.cpp
     max6675_frame_test.cpp
     temperature_filter_test.cpp
 )

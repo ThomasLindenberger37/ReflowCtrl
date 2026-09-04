@@ -4,6 +4,8 @@
 
 namespace reflowCtrl {
 
-esp_err_t start_web_server();
+class TemperatureAcquisition;
+
+esp_err_t start_web_server(TemperatureAcquisition& temperature_acquisition);
 
 }  // namespace reflowCtrl

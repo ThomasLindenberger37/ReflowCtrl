@@ -7,6 +7,11 @@ idf_component_register(
         "web_server.cpp"
         "wifi_station.cpp"
     INCLUDE_DIRS "."
+    EMBED_TXTFILES
+        "../webserver/frontend/index.html"
+        "../webserver/frontend/style.css"
+        "../webserver/frontend/app.js"
+        "../webserver/frontend/reflow-profile.js"
     REQUIRES
         app_update
         bootloader_support
