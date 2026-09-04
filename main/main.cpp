@@ -5,6 +5,7 @@
 #include "led_blinker.hpp"
 #include "ota_updater.hpp"
 #include "temperature_acquisition.hpp"
+#include "web_server.hpp"
 #include "wifi_station.hpp"
 
 namespace {
@@ -26,6 +27,12 @@ extern "C" void app_main() {
 
     ESP_LOGI(TAG, "Starting OTA updater");
     ESP_ERROR_CHECK(reflowCtrl::start_ota_updater());
+
+    ESP_LOGI(TAG, "Waiting for Wi-Fi address");
+    reflowCtrl::wait_for_wifi_connection();
+
+    ESP_LOGI(TAG, "Starting web server");
+    ESP_ERROR_CHECK(reflowCtrl::start_web_server());
 
     static reflowCtrl::TemperatureAcquisition temperature_acquisition;
     ESP_ERROR_CHECK(temperature_acquisition.start());

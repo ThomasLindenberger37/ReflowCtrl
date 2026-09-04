@@ -4,6 +4,7 @@ idf_component_register(
         "max6675.cpp"
         "ota_updater.cpp"
         "temperature_acquisition.cpp"
+        "web_server.cpp"
         "wifi_station.cpp"
     INCLUDE_DIRS "."
     REQUIRES
@@ -13,6 +14,7 @@ idf_component_register(
         esp_driver_spi
         esp_event
         esp_http_client
+        esp_http_server
         esp_https_ota
         esp_netif
         esp_wifi

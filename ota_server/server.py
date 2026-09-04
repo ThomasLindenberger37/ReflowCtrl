@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import http.client
 import ipaddress
 import socket
 import threading
@@ -9,11 +10,13 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import ifaddr
-from zeroconf import IPVersion, ServiceInfo, Zeroconf
+from zeroconf import IPVersion, Zeroconf
 
-DEFAULT_HOSTNAME = "reflow-ota-server.local."
+DEFAULT_DEVICE_HOSTNAME = "reflow-ctrl.local"
+DEVICE_HTTP_SERVICE = "ReflowCtrl._http._tcp.local."
 DEFAULT_PORT = 8070
 TRANSFER_CHUNK_SIZE = 64 * 1024
+VIRTUAL_INTERFACE_PREFIXES = ("br-", "docker", "veth")
 
 
 def format_byte_count(byte_count: float) -> str:
@@ -55,6 +58,8 @@ def show_download_progress(transferred: int, total: int, started_at: float) -> N
 def local_ipv4_addresses() -> list[str]:
     addresses: set[str] = set()
     for adapter in ifaddr.get_adapters():
+        if adapter.name.startswith(VIRTUAL_INTERFACE_PREFIXES):
+            continue
         for interface_address in adapter.ips:
             if not isinstance(interface_address.ip, str):
                 continue
@@ -161,21 +166,57 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def register_services(address: str, port: int) -> tuple[Zeroconf, list[ServiceInfo]]:
-    services = [
-        ServiceInfo(
-            "_http._tcp.local.",
-            f"ReflowCtrl OTA ({address})._http._tcp.local.",
-            addresses=[socket.inet_aton(address)],
-            port=port,
-            properties={"path": "/firmware.bin"},
-            server=DEFAULT_HOSTNAME,
-        ),
-    ]
-    zeroconf = Zeroconf(interfaces=[address], ip_version=IPVersion.V4Only)
-    for service in services:
-        zeroconf.register_service(service)
-    return zeroconf, services
+def discover_device_addresses(zeroconf_instances: list[Zeroconf]) -> list[str]:
+    addresses: set[str] = set()
+    for zeroconf in zeroconf_instances:
+        service = zeroconf.get_service_info("_http._tcp.local.", DEVICE_HTTP_SERVICE, timeout=500)
+        if service is not None and service.server == f"{DEFAULT_DEVICE_HOSTNAME}.":
+            addresses.update(service.parsed_addresses(IPVersion.V4Only))
+    return sorted(addresses)
+
+
+def source_address_for(destination: str) -> str:
+    route_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        route_socket.connect((destination, 80))
+        return str(route_socket.getsockname()[0])
+    finally:
+        route_socket.close()
+
+
+def trigger_device_update(
+    zeroconf_instances: list[Zeroconf], server_port: int, stop_requested: threading.Event
+) -> None:
+    announced_address = ""
+    print(f"Waiting to discover {DEFAULT_DEVICE_HOSTNAME} via mDNS")
+    while not stop_requested.is_set():
+        for address in discover_device_addresses(zeroconf_instances):
+            if address != announced_address:
+                print(f"Found {DEFAULT_DEVICE_HOSTNAME} at {address}")
+                announced_address = address
+
+            server_address = source_address_for(address)
+            connection = http.client.HTTPConnection(address, 80, timeout=2)
+            try:
+                connection.request(
+                    "POST",
+                    "/ota",
+                    body=server_address.encode("ascii"),
+                    headers={"Host": DEFAULT_DEVICE_HOSTNAME},
+                )
+                response = connection.getresponse()
+                if response.status == 202:
+                    print(
+                        f"ESP accepted OTA trigger at http://{address}/ota; "
+                        f"firmware URL is http://{server_address}:{server_port}/firmware.bin"
+                    )
+                    return
+                print(f"ESP returned HTTP {response.status} for OTA trigger; retrying")
+            except OSError:
+                continue
+            finally:
+                connection.close()
+        stop_requested.wait(1)
 
 
 def main() -> None:
@@ -187,9 +228,21 @@ def main() -> None:
     advertised_addresses = local_ipv4_addresses()
     server = UpdateServer(("0.0.0.0", args.port), firmware)
     server.timeout = 1
-    registrations = [register_services(address, args.port) for address in advertised_addresses]
-    print(f"Serving {firmware} at http://{DEFAULT_HOSTNAME.rstrip('.')}:{args.port}/firmware.bin")
-    print(f"Advertising on {', '.join(advertised_addresses)}; server exits after ESP confirmation")
+    zeroconf_instances = [
+        Zeroconf(interfaces=[address], ip_version=IPVersion.V4Only)
+        for address in advertised_addresses
+    ]
+    firmware_urls = [
+        f"http://{address}:{args.port}/firmware.bin" for address in advertised_addresses
+    ]
+    print(f"Serving {firmware} at {', '.join(firmware_urls)}")
+    print(f"Notifying {DEFAULT_DEVICE_HOSTNAME}; server exits after ESP confirmation")
+    trigger_thread = threading.Thread(
+        target=trigger_device_update,
+        args=(zeroconf_instances, args.port, server.stop_requested),
+        daemon=True,
+    )
+    trigger_thread.start()
 
     try:
         while not server.stop_requested.is_set():
@@ -197,9 +250,7 @@ def main() -> None:
     except KeyboardInterrupt:
         print("Interrupted")
     finally:
-        for zeroconf, services in registrations:
-            for service in reversed(services):
-                zeroconf.unregister_service(service)
+        for zeroconf in zeroconf_instances:
             zeroconf.close()
         server.server_close()
 

@@ -9,12 +9,15 @@
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "nvs_flash.h"
 
 namespace reflowCtrl {
 namespace {
 
 constexpr char TAG[] = "wifi_station";
+constexpr TickType_t CONNECTION_WAIT_PERIOD = pdMS_TO_TICKS(50);
 std::atomic_bool connected{false};
 
 void handle_wifi_event(void*, esp_event_base_t event_base, int32_t event_id, void*) {
@@ -76,6 +79,12 @@ esp_err_t start_wifi_station() {
 
 bool is_wifi_connected() {
     return connected.load();
+}
+
+void wait_for_wifi_connection() {
+    while (!is_wifi_connected()) {
+        vTaskDelay(CONNECTION_WAIT_PERIOD);
+    }
 }
 
 }  // namespace reflowCtrl

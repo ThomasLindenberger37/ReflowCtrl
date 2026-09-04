@@ -1,13 +1,15 @@
 # ReflowCtrl OTA-Update
 
 Mit dem OTA-Update (Over the Air) kann eine neue Firmware über das lokale WLAN auf den ESP32
-übertragen werden. Der Python-Server läuft auf dem Entwicklungsrechner und ist im Netzwerk unter
-`reflow-ota-server.local` erreichbar.
+übertragen werden. Der Python-Server läuft auf dem Entwicklungsrechner und teilt dem ESP seine
+erreichbare LAN-Adresse beim Auslösen des Updates direkt mit.
 
-Der ESP32 prüft alle fünf Sekunden, ob der Server verfügbar ist. Sobald der Server gestartet wird,
-lädt der ESP die angebotene Firmware herunter, prüft und installiert sie. Danach bestätigt er dem
-Server das erfolgreiche Update und startet neu. Der Server beendet sich nach dieser Bestätigung
-automatisch.
+Der ESP32 ist im lokalen Netz als `reflow-ctrl.local` erreichbar und stellt einen minimalistischen
+HTTP-Server bereit. Beim Start sendet der OTA-Server einen Webhook an `POST
+http://reflow-ctrl.local/ota`. Daraufhin lädt der ESP die angebotene Firmware sofort herunter,
+prüft und installiert sie. Danach bestätigt er dem Server das erfolgreiche Update und startet neu.
+Der Server beendet sich nach dieser Bestätigung automatisch. Ohne Webhook führt der ESP keine
+regelmäßigen OTA-Anfragen aus.
 
 ## Voraussetzungen
 
@@ -117,19 +119,27 @@ Danach den Server im Devcontainer aus dem Projektverzeichnis starten:
 uv run python ota_server/server.py
 ```
 
-Der Server erkennt die aktiven IPv4-Netzwerkschnittstellen automatisch und veröffentlicht den
-Hostnamen per mDNS. Eine feste oder beim Start angegebene IP-Adresse ist nicht erforderlich.
+Der Server erkennt die aktiven IPv4-Netzwerkschnittstellen automatisch. Er entdeckt den HTTP-Dienst
+des ESP direkt per mDNS und ist deshalb nicht
+darauf angewiesen, dass der Devcontainer `.local`-Namen über den System-DNS-Resolver auflösen kann.
+Über die Netzwerkroute zum ESP bestimmt er seine erreichbare LAN-Adresse und sendet sie im
+Webhook. Der OTA-Server selbst benötigt daher keinen mDNS-Namen. Docker-Bridge- und virtuelle
+Container-Schnittstellen werden ignoriert. Eine feste oder beim Start angegebene IP-Adresse ist
+nicht erforderlich.
 
 Der Server verwendet standardmäßig `build/reflowCtrl.bin` und TCP-Port 8070. Eine typische
 Ausgabe sieht so aus:
 
 ```text
-Serving .../build/reflowCtrl.bin at http://reflow-ota-server.local:8070/firmware.bin
-Advertising 192.168.1.20; server exits after ESP confirmation
+Serving .../build/reflowCtrl.bin at http://192.168.1.20:8070/firmware.bin
+Notifying reflow-ctrl.local; server exits after ESP confirmation
+Waiting to discover reflow-ctrl.local via mDNS
+Found reflow-ctrl.local at 192.168.1.57
+ESP accepted OTA trigger at http://192.168.1.57/ota; firmware URL is http://192.168.1.20:8070/firmware.bin
 ```
 
 Nun sind keine weiteren Eingaben erforderlich. Spätestens beim nächsten Ein-Sekunden-Intervall
-findet der ESP den Server und startet das Update. Während der Übertragung zeigt der Server den
+erreicht der Webhook den ESP und startet das Update. Während der Übertragung zeigt der Server den
 Fortschritt als Prozentwert, übertragene Datenmenge, exakte Byte-Anzahl,
 Durchschnittsgeschwindigkeit, Laufzeit und geschätzte Restzeit an. Nach erfolgreicher Übertragung
 erscheint beispielsweise:
@@ -141,6 +151,16 @@ ESP confirmed the update; server stopped
 ```
 
 Der Serverprozess endet anschließend selbstständig.
+
+Der Status-Endpunkt des ESP ist unter `GET http://reflow-ctrl.local/` verfügbar. Ein Update kann
+bei laufendem OTA-Server außerdem manuell ausgelöst werden:
+
+```sh
+curl -X POST --data '192.168.1.20' http://reflow-ctrl.local/ota
+```
+
+Jeder angenommene Webhook installiert das vom Server gelieferte Image. Die App-Version wird dabei
+nicht mit der laufenden Version verglichen; dasselbe Image kann daher erneut installiert werden.
 
 ## Eigenes Firmware-Image verwenden
 
@@ -170,8 +190,8 @@ ESP die Firmware schreibt, sollten weder Server noch ESP ausgeschaltet werden.
 
 - Prüfen, ob Rechner und ESP im selben WLAN beziehungsweise lokalen Netz sind.
 - UDP-Port 5353 und TCP-Port 8070 in der Firewall freigeben.
-- In der Serverausgabe prüfen, ob die LAN-Adresse unter `Advertising on ...` aufgeführt wird.
-- Prüfen, ob `reflow-ota-server.local` vom Entwicklungsrechner per mDNS veröffentlicht wird.
+- In der Serverausgabe prüfen, ob die korrekte LAN-Adresse in der Firmware-URL aufgeführt wird.
+- Prüfen, ob der Server `reflow-ctrl.local` per mDNS findet.
 - Die serielle ESP-Ausgabe auf WLAN- oder OTA-Fehler kontrollieren.
 
 ### `Firmware not found`

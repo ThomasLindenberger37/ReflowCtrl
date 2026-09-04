@@ -9,6 +9,7 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/task.h"
 #include "sdkconfig.h"
 #include "wifi_station.hpp"
@@ -17,10 +18,18 @@ namespace reflowCtrl {
 namespace {
 
 constexpr char TAG[] = "ota_updater";
-constexpr TickType_t CHECK_PERIOD = pdMS_TO_TICKS(1000);
+constexpr TickType_t RETRY_PERIOD = pdMS_TO_TICKS(1000);
 constexpr TickType_t CONFIRM_RETRY_PERIOD = pdMS_TO_TICKS(1000);
 constexpr uint32_t TASK_STACK_SIZE = 8192;
-constexpr UBaseType_t TASK_PRIORITY = 5;
+constexpr UBaseType_t TASK_PRIORITY = configMAX_PRIORITIES - 1;
+constexpr std::size_t SERVER_ADDRESS_SIZE = 16;
+constexpr int OTA_RECEIVE_BUFFER_SIZE = 16 * 1024;
+
+struct OtaRequest {
+    std::array<char, SERVER_ADDRESS_SIZE> server_address{};
+};
+
+QueueHandle_t ota_request_queue = nullptr;
 
 std::array<char, 192> make_url(const char* host, const char* path) {
     std::array<char, 192> url{};
@@ -48,10 +57,6 @@ bool confirm_update_with_host(const char* host) {
     return result == ESP_OK && status == 200;
 }
 
-bool confirm_update() {
-    return confirm_update_with_host(CONFIG_REFLOW_OTA_SERVER_HOSTNAME);
-}
-
 bool ota_update_with_host(const char* host) {
     const auto firmware_url = make_url(host, "/firmware.bin");
 
@@ -59,6 +64,7 @@ bool ota_update_with_host(const char* host) {
     http_config.url = firmware_url.data();
     http_config.timeout_ms = 5000;
     http_config.keep_alive_enable = true;
+    http_config.buffer_size = OTA_RECEIVE_BUFFER_SIZE;
 
     esp_https_ota_config_t ota_config{};
     ota_config.http_config = &http_config;
@@ -75,19 +81,17 @@ bool ota_update_with_host(const char* host) {
 }
 
 void ota_task(void*) {
+    OtaRequest request{};
     while (true) {
-        if (!is_wifi_connected()) {
-            vTaskDelay(CHECK_PERIOD);
-            continue;
-        }
+        xQueueReceive(ota_request_queue, &request, portMAX_DELAY);
+        ESP_LOGI(TAG, "OTA update requested from %s", request.server_address.data());
 
-        if (!ota_update_with_host(CONFIG_REFLOW_OTA_SERVER_HOSTNAME)) {
-            vTaskDelay(CHECK_PERIOD);
-            continue;
+        while (!is_wifi_connected() || !ota_update_with_host(request.server_address.data())) {
+            vTaskDelay(RETRY_PERIOD);
         }
 
         ESP_LOGI(TAG, "Firmware image installed; confirming download to server");
-        while (!confirm_update()) {
+        while (!confirm_update_with_host(request.server_address.data())) {
             ESP_LOGW(TAG, "Could not confirm update; retrying");
             vTaskDelay(CONFIRM_RETRY_PERIOD);
         }
@@ -100,9 +104,33 @@ void ota_task(void*) {
 }  // namespace
 
 esp_err_t start_ota_updater() {
+    ota_request_queue = xQueueCreate(1, sizeof(OtaRequest));
+    if (ota_request_queue == nullptr) {
+        return ESP_ERR_NO_MEM;
+    }
+
     const BaseType_t result =
         xTaskCreate(&ota_task, "ota_updater", TASK_STACK_SIZE, nullptr, TASK_PRIORITY, nullptr);
+    if (result != pdPASS) {
+        vQueueDelete(ota_request_queue);
+        ota_request_queue = nullptr;
+    }
     return result == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
+}
+
+esp_err_t trigger_ota_update(const char* server_address) {
+    if (ota_request_queue == nullptr) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    OtaRequest request{};
+    const int written = std::snprintf(request.server_address.data(), request.server_address.size(),
+                                      "%s", server_address);
+    if (written < 0 || static_cast<std::size_t>(written) >= request.server_address.size()) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    return xQueueOverwrite(ota_request_queue, &request) == pdPASS ? ESP_OK : ESP_FAIL;
 }
 
 }  // namespace reflowCtrl
