@@ -13,7 +13,8 @@ namespace reflowCtrl {
 
 class TemperatureAcquisition {
    public:
-    explicit TemperatureAcquisition(MessageBus& bus) noexcept : bus_(bus) {}
+    TemperatureAcquisition(MessageBus& bus, Max6675& sensor) noexcept
+        : sensor_(sensor), bus_(bus) {}
 
     TemperatureAcquisition(const TemperatureAcquisition&) = delete;
     TemperatureAcquisition& operator=(const TemperatureAcquisition&) = delete;
@@ -27,7 +28,7 @@ class TemperatureAcquisition {
     void publish_temperature(float temperature_celsius) noexcept;
     void publish_error(esp_err_t error) noexcept;
 
-    Max6675 sensor_;
+    Max6675& sensor_;
     MessageBus& bus_;
     GaussianTemperatureFilter filter_;
     TaskHandle_t task_handle_ = nullptr;

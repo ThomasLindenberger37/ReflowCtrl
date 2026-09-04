@@ -17,6 +17,10 @@ struct TemperatureMeasured {
 
 struct TemperatureSensorFailed {};
 
+struct WifiConnecting {};
+
+struct WifiConnected {};
+
 struct OtaUpdateRequested {
     std::array<char, 16> server_address{};
 };
@@ -25,8 +29,9 @@ struct OtaUpdateStarted {};
 
 struct ControllerStarted {};
 
-using MessageTypes = std::variant<ButtonPressed, TemperatureMeasured, TemperatureSensorFailed,
-                                  OtaUpdateRequested, OtaUpdateStarted, ControllerStarted>;
+using MessageTypes =
+    std::variant<ButtonPressed, TemperatureMeasured, TemperatureSensorFailed, WifiConnecting,
+                 WifiConnected, OtaUpdateRequested, OtaUpdateStarted, ControllerStarted>;
 
 }  // namespace reflowCtrl
 

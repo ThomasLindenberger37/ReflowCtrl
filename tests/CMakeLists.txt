@@ -27,7 +27,12 @@ add_executable(
 )
 target_compile_features(led_blinker_test PRIVATE cxx_std_23)
 target_compile_options(led_blinker_test PRIVATE -Wall -Wextra -Werror -pedantic)
-target_include_directories(led_blinker_test PRIVATE ${CMAKE_CURRENT_LIST_DIR}/../main)
+target_include_directories(
+    led_blinker_test
+    PRIVATE
+        ${CMAKE_CURRENT_LIST_DIR}/../main
+        ${CMAKE_CURRENT_LIST_DIR}/../main/components
+)
 target_link_libraries(led_blinker_test PRIVATE GTest::gtest_main)
 
 include(GoogleTest)

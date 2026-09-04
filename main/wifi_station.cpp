@@ -19,27 +19,33 @@ namespace {
 constexpr char TAG[] = "wifi_station";
 constexpr TickType_t CONNECTION_WAIT_PERIOD = pdMS_TO_TICKS(50);
 std::atomic_bool connected{false};
+MessageBus* message_bus = nullptr;
 
 void handle_wifi_event(void*, esp_event_base_t event_base, int32_t event_id, void*) {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+        message_bus->publish(WifiConnecting{});
         ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_connect());
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         connected = false;
+        message_bus->publish(WifiConnecting{});
         ESP_LOGW(TAG, "Wi-Fi connection lost; reconnecting");
         ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_connect());
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         connected = true;
+        message_bus->publish(WifiConnected{});
         ESP_LOGI(TAG, "Wi-Fi connected");
     }
 }
 
 }  // namespace
 
-esp_err_t start_wifi_station() {
+esp_err_t start_wifi_station(MessageBus& bus) {
     if (credentials::WIFI_SSID[0] == '\0') {
         ESP_LOGE(TAG, "Wi-Fi SSID is empty; configure main/Credentials.hpp");
         return ESP_ERR_INVALID_STATE;
     }
+
+    message_bus = &bus;
 
     esp_err_t result = nvs_flash_init();
     if (result == ESP_ERR_NVS_NO_FREE_PAGES || result == ESP_ERR_NVS_NEW_VERSION_FOUND) {
