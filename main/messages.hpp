@@ -21,6 +21,10 @@ struct WifiConnecting {};
 
 struct WifiConnected {};
 
+struct CharacterizationStarted {};
+
+struct CharacterizationAborted {};
+
 struct OtaUpdateRequested {
     std::array<char, 16> server_address{};
 };
@@ -31,7 +35,8 @@ struct ControllerStarted {};
 
 using MessageTypes =
     std::variant<ButtonPressed, TemperatureMeasured, TemperatureSensorFailed, WifiConnecting,
-                 WifiConnected, OtaUpdateRequested, OtaUpdateStarted, ControllerStarted>;
+                 WifiConnected, CharacterizationStarted, CharacterizationAborted,
+                 OtaUpdateRequested, OtaUpdateStarted, ControllerStarted>;
 
 }  // namespace reflowCtrl
 

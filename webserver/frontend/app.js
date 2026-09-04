@@ -206,7 +206,7 @@ function downloadDebugLog() {
 
 const characterization = {
   backdrop: document.querySelector("#characterizationBackdrop"), close: document.querySelector("#characterizationClose"),
-  start: document.querySelector("#characterizationStart"), abort: document.querySelector("#characterizationAbort"),
+  start: document.querySelector("#characterizationStart"),
   state: document.querySelector("#characterizationState"), temperature: document.querySelector("#characterizationTemperature"),
   elapsed: document.querySelector("#characterizationElapsed"), curve: document.querySelector("#characterizationCurve"),
   axisMin: document.querySelector("#characterizationAxisMin"), axisMax: document.querySelector("#characterizationAxisMax"),
@@ -253,23 +253,26 @@ function closeCharacterization() {
 }
 
 async function startCharacterization() {
-  characterization.start.disabled = true;
   try {
     await apiRequest("/characterization/start", { method: "POST" });
     characterization.running = true; characterization.startedAt = Date.now(); characterization.samples = [];
     characterization.curve.setAttribute("points", ""); characterization.state.textContent = "MEASURING";
     characterization.state.dataset.state = "running"; characterization.message.textContent = "Measurement in progress. The relay is enabled.";
-    characterization.abort.hidden = false; characterization.empty.hidden = false;
-  } catch (error) { characterization.start.disabled = false; characterization.message.textContent = `Could not start measurement: ${error.message}`; }
+    characterization.start.textContent = "Abort measurement"; characterization.start.classList.add("button-danger"); characterization.empty.hidden = false;
+  } catch (error) { characterization.message.textContent = `Could not start measurement: ${error.message}`; }
 }
 
 async function abortCharacterization() {
-  characterization.abort.disabled = true;
   try {
     await apiRequest("/characterization/abort", { method: "POST" });
     characterization.running = false; characterization.state.textContent = "ABORTED"; characterization.state.dataset.state = "aborted";
-    characterization.message.textContent = "Measurement aborted. The relay is disabled."; characterization.abort.hidden = true; characterization.start.disabled = false;
-  } catch (error) { characterization.abort.disabled = false; characterization.message.textContent = `Could not abort measurement: ${error.message}`; }
+    characterization.message.textContent = "Measurement aborted. The relay is disabled."; characterization.start.textContent = "Start measurement"; characterization.start.classList.remove("button-danger");
+  } catch (error) { characterization.message.textContent = `Could not abort measurement: ${error.message}`; }
+}
+
+function toggleCharacterization() {
+  if (characterization.running) abortCharacterization();
+  else startCharacterization();
 }
 
 async function pollStatus() {
@@ -693,8 +696,7 @@ function initialize() {
   debug.download.addEventListener("click", downloadDebugLog);
   debug.characterize.addEventListener("click", openCharacterization);
   characterization.close.addEventListener("click", closeCharacterization);
-  characterization.start.addEventListener("click", startCharacterization);
-  characterization.abort.addEventListener("click", abortCharacterization);
+  characterization.start.addEventListener("click", toggleCharacterization);
   ui.start.disabled = true; ui.start.title = "Process control is not implemented yet";
   ui.stop.disabled = true;
   profileUi.select.innerHTML = "<option>Profiles not implemented</option>";

@@ -84,8 +84,9 @@ esp_err_t send_status(httpd_req_t* request) {
     char response[160]{};
     std::snprintf(response, sizeof(response),
                   "{\"state\":\"%s\",\"temperature\":%.2f,\"target_temperature\":0.0,"
-                  "\"heater\":false,\"elapsed_seconds\":0}",
-                  has_temperature ? "idle" : "error", static_cast<double>(temperature));
+                  "\"heater\":%s,\"elapsed_seconds\":0}",
+                  has_temperature ? "idle" : "error", static_cast<double>(temperature),
+                  server->heater_active() ? "true" : "false");
     httpd_resp_set_type(request, "application/json");
     return httpd_resp_sendstr(request, response);
 }
@@ -182,6 +183,20 @@ esp_err_t handle_ota_trigger(httpd_req_t* request) {
     return httpd_resp_sendstr(request, "OTA update accepted\n");
 }
 
+esp_err_t handle_characterization_start(httpd_req_t* request) {
+    auto* server = static_cast<WebServer*>(request->user_ctx);
+    server->start_characterization();
+    httpd_resp_set_type(request, "application/json");
+    return httpd_resp_sendstr(request, "{}");
+}
+
+esp_err_t handle_characterization_abort(httpd_req_t* request) {
+    auto* server = static_cast<WebServer*>(request->user_ctx);
+    server->abort_characterization();
+    httpd_resp_set_type(request, "application/json");
+    return httpd_resp_sendstr(request, "{}");
+}
+
 }  // namespace
 
 esp_err_t WebServer::start() {
@@ -211,7 +226,7 @@ esp_err_t WebServer::start() {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = HTTP_PORT;
     config.stack_size = 6144;
-    config.max_uri_handlers = 8;
+    config.max_uri_handlers = 10;
     httpd_handle_t server = nullptr;
     ESP_RETURN_ON_ERROR(httpd_start(&server, &config), TAG, "Failed to start HTTP server");
 
@@ -229,6 +244,8 @@ esp_err_t WebServer::start() {
         httpd_uri_t{"/api/status", HTTP_GET, &send_status, this},
         httpd_uri_t{"/api/logs", HTTP_GET, &send_logs, nullptr},
         httpd_uri_t{"/ota", HTTP_POST, &handle_ota_trigger, this},
+        httpd_uri_t{"/api/characterization/start", HTTP_POST, &handle_characterization_start, this},
+        httpd_uri_t{"/api/characterization/abort", HTTP_POST, &handle_characterization_abort, this},
     };
 
     for (const httpd_uri_t& endpoint : endpoints) {
@@ -247,6 +264,16 @@ void WebServer::on_temperature_measured(const TemperatureMeasured& message) noex
 
 void WebServer::on_temperature_sensor_failed(const TemperatureSensorFailed&) noexcept {
     has_temperature_.store(false);
+}
+
+void WebServer::start_characterization() noexcept {
+    heater_active_.store(true);
+    bus_.publish(CharacterizationStarted{});
+}
+
+void WebServer::abort_characterization() noexcept {
+    heater_active_.store(false);
+    bus_.publish(CharacterizationAborted{});
 }
 
 }  // namespace reflowCtrl

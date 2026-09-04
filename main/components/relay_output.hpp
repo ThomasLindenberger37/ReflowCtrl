@@ -13,6 +13,8 @@ class RelayOutput {
 
     esp_err_t start();
     void on_ota_started(const OtaUpdateStarted&) noexcept;
+    void on_characterization_started(const CharacterizationStarted&) noexcept;
+    void on_characterization_aborted(const CharacterizationAborted&) noexcept;
 
    private:
     MessageBus& bus_;

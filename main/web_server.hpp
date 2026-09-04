@@ -20,14 +20,20 @@ class WebServer {
     [[nodiscard]] bool has_temperature() const noexcept {
         return has_temperature_.load();
     }
+    [[nodiscard]] bool heater_active() const noexcept {
+        return heater_active_.load();
+    }
     void publish_ota_request(const OtaUpdateRequested& request) noexcept {
         bus_.publish(request);
     }
+    void start_characterization() noexcept;
+    void abort_characterization() noexcept;
 
    private:
     MessageBus& bus_;
     std::atomic<float> temperature_celsius_{0.0F};
     std::atomic<bool> has_temperature_{false};
+    std::atomic<bool> heater_active_{false};
 };
 
 }  // namespace reflowCtrl

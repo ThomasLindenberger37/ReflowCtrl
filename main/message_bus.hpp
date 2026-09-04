@@ -22,7 +22,7 @@ consteval bool is_registered_message(const std::variant<RegisteredMessages...>*)
 
 class MessageBus {
    public:
-    static constexpr std::size_t MAX_SUBSCRIPTIONS = 10;
+    static constexpr std::size_t MAX_SUBSCRIPTIONS = 40;
 
     MessageBus() = default;
     MessageBus(const MessageBus&) = delete;
