@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS
         "main.cpp"
+        "message_bus.cpp"
         "max6675.cpp"
         "ota_updater.cpp"
         "temperature_acquisition.cpp"
@@ -24,4 +25,12 @@ idf_component_register(
         esp_netif
         esp_wifi
         nvs_flash
+)
+
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_custom_target(
+    message_bus_subscription_check ALL
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/analyze_message_bus_subscriptions.py
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "Checking MessageBus subscription capacity"
 )

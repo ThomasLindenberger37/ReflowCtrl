@@ -51,6 +51,10 @@ run_clang_tidy() {
     fi
 }
 
+run_message_bus_subscription_check() {
+    python3 tools/analyze_message_bus_subscriptions.py
+}
+
 run_cppcheck() {
     local cppcheck_flags=(
         "--enable=warning,performance,portability"
@@ -92,6 +96,7 @@ command_name="${1:-}"
 
 case "${command_name}" in
     build)
+        run_message_bus_subscription_check
         idf.py build
         ;;
     clean)
@@ -113,6 +118,7 @@ case "${command_name}" in
         uv run ruff check .
         ;;
     lint)
+        run_message_bus_subscription_check
         check_formatting
         uv run ruff check .
         run_clang_tidy

@@ -18,10 +18,12 @@ add_executable(
     led_blinker_test
     led_blinker_test.cpp
     button_debouncer_test.cpp
+    message_bus_test.cpp
     ipv4_address_test.cpp
     log_buffer_test.cpp
     max6675_frame_test.cpp
     temperature_filter_test.cpp
+    ../main/message_bus.cpp
 )
 target_compile_features(led_blinker_test PRIVATE cxx_std_23)
 target_compile_options(led_blinker_test PRIVATE -Wall -Wextra -Werror -pedantic)

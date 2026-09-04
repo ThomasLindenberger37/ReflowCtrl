@@ -29,10 +29,6 @@ struct OtaRequest {
     std::array<char, SERVER_ADDRESS_SIZE> server_address{};
 };
 
-QueueHandle_t ota_request_queue = nullptr;
-OtaStartedCallback ota_started_callback = nullptr;
-void* ota_started_callback_context = nullptr;
-
 std::array<char, 192> make_url(const char* host, const char* path) {
     std::array<char, 192> url{};
     std::snprintf(url.data(), url.size(), "http://%s:%d%s", host, CONFIG_REFLOW_OTA_SERVER_PORT,
@@ -82,10 +78,16 @@ bool ota_update_with_host(const char* host) {
     return false;
 }
 
-void ota_task(void*) {
+}  // namespace
+
+void OtaUpdater::task_entry(void* context) {
+    static_cast<OtaUpdater*>(context)->task_loop();
+}
+
+void OtaUpdater::task_loop() {
     OtaRequest request{};
     while (true) {
-        xQueueReceive(ota_request_queue, &request, portMAX_DELAY);
+        xQueueReceive(static_cast<QueueHandle_t>(request_queue_), &request, portMAX_DELAY);
         ESP_LOGI(TAG, "OTA update requested from %s", request.server_address.data());
 
         while (!is_wifi_connected() || !ota_update_with_host(request.server_address.data())) {
@@ -103,47 +105,31 @@ void ota_task(void*) {
     }
 }
 
-}  // namespace
-
-esp_err_t start_ota_updater(OtaStartedCallback callback, void* callback_context) {
-    ota_request_queue = xQueueCreate(1, sizeof(OtaRequest));
-    if (ota_request_queue == nullptr) {
+esp_err_t OtaUpdater::start() {
+    request_queue_ = xQueueCreate(1, sizeof(OtaRequest));
+    if (request_queue_ == nullptr) {
         return ESP_ERR_NO_MEM;
     }
 
     const BaseType_t result =
-        xTaskCreate(&ota_task, "ota_updater", TASK_STACK_SIZE, nullptr, TASK_PRIORITY, nullptr);
+        xTaskCreate(&task_entry, "ota_updater", TASK_STACK_SIZE, this, TASK_PRIORITY, nullptr);
     if (result != pdPASS) {
-        vQueueDelete(ota_request_queue);
-        ota_request_queue = nullptr;
+        vQueueDelete(static_cast<QueueHandle_t>(request_queue_));
+        request_queue_ = nullptr;
         return ESP_ERR_NO_MEM;
     }
 
-    ota_started_callback = callback;
-    ota_started_callback_context = callback_context;
+    if (!bus_.subscribe<OtaUpdateRequested>(&OtaUpdater::on_update_requested, this)) {
+        return ESP_ERR_NO_MEM;
+    }
     return ESP_OK;
 }
 
-esp_err_t trigger_ota_update(const char* server_address) {
-    if (ota_request_queue == nullptr) {
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    OtaRequest request{};
-    const int written = std::snprintf(request.server_address.data(), request.server_address.size(),
-                                      "%s", server_address);
-    if (written < 0 || static_cast<std::size_t>(written) >= request.server_address.size()) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    if (xQueueOverwrite(ota_request_queue, &request) != pdPASS) {
-        return ESP_FAIL;
-    }
-
-    if (ota_started_callback != nullptr) {
-        ota_started_callback(ota_started_callback_context);
-    }
-    return ESP_OK;
+void OtaUpdater::on_update_requested(const OtaUpdateRequested& request) {
+    OtaRequest queued_request{};
+    queued_request.server_address = request.server_address;
+    xQueueOverwrite(static_cast<QueueHandle_t>(request_queue_), &queued_request);
+    bus_.publish(OtaUpdateStarted{});
 }
 
 }  // namespace reflowCtrl

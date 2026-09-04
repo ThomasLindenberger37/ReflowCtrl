@@ -117,7 +117,7 @@
     {
       "label": "Unit Tests: Build + Run",
       "type": "shell",
-      "command": "cmake -S tests -B build/unit-tests && cmake --build build/unit-tests && ctest --test-dir build/unit-tests --output-on-failure && uv run python -m unittest discover -s tests -p '*_test.py'",
+      "command": "python3 tools/analyze_message_bus_subscriptions.py && cmake -S tests -B build/unit-tests && cmake --build build/unit-tests && ctest --test-dir build/unit-tests --output-on-failure && uv run python -m unittest discover -s tests -p '*_test.py'",
       "options": {
         "cwd": "${workspaceFolder}"
       },

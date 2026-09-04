@@ -6,7 +6,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <optional>
 
 #include "esp_check.h"
 #include "esp_event.h"
@@ -17,8 +16,6 @@
 #include "ipv4_address.hpp"
 #include "log_buffer.hpp"
 #include "mdns.h"
-#include "ota_updater.hpp"
-#include "temperature_acquisition.hpp"
 
 extern const char index_html_start[] asm("_binary_index_html_start");
 extern const char index_html_end[] asm("_binary_index_html_end");
@@ -39,7 +36,6 @@ constexpr std::size_t SERVER_ADDRESS_SIZE = 16;
 constexpr std::size_t LOG_FORMAT_BUFFER_SIZE = 256;
 LogBuffer log_buffer;
 vprintf_like_t uart_vprintf = nullptr;
-TemperatureAcquisition* temperature_source = nullptr;
 
 struct WebAsset {
     const char* begin;
@@ -82,13 +78,14 @@ esp_err_t send_asset(httpd_req_t* request) {
 }
 
 esp_err_t send_status(httpd_req_t* request) {
-    const std::optional<float> temperature = temperature_source->temperature_celsius();
+    const auto* server = static_cast<const WebServer*>(request->user_ctx);
+    const bool has_temperature = server->has_temperature();
+    const float temperature = server->temperature_celsius();
     char response[160]{};
     std::snprintf(response, sizeof(response),
                   "{\"state\":\"%s\",\"temperature\":%.2f,\"target_temperature\":0.0,"
                   "\"heater\":false,\"elapsed_seconds\":0}",
-                  temperature.has_value() ? "idle" : "error",
-                  static_cast<double>(temperature.value_or(0.0F)));
+                  has_temperature ? "idle" : "error", static_cast<double>(temperature));
     httpd_resp_set_type(request, "application/json");
     return httpd_resp_sendstr(request, response);
 }
@@ -174,12 +171,11 @@ esp_err_t handle_ota_trigger(httpd_req_t* request) {
         return httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Invalid IPv4 address");
     }
 
-    const esp_err_t result = trigger_ota_update(server_address);
-    if (result != ESP_OK) {
-        ESP_LOGE(TAG, "Could not trigger OTA update: %s", esp_err_to_name(result));
-        return httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR,
-                                   "OTA updater unavailable");
-    }
+    auto* server = static_cast<WebServer*>(request->user_ctx);
+    OtaUpdateRequested update_request{};
+    std::memcpy(update_request.server_address.data(), server_address,
+                update_request.server_address.size());
+    server->publish_ota_request(update_request);
 
     httpd_resp_set_status(request, "202 Accepted");
     httpd_resp_set_type(request, "text/plain");
@@ -188,8 +184,12 @@ esp_err_t handle_ota_trigger(httpd_req_t* request) {
 
 }  // namespace
 
-esp_err_t start_web_server(TemperatureAcquisition& temperature_acquisition) {
-    temperature_source = &temperature_acquisition;
+esp_err_t WebServer::start() {
+    if (!bus_.subscribe<TemperatureMeasured>(&WebServer::on_temperature_measured, this)
+        || !bus_.subscribe<TemperatureSensorFailed>(&WebServer::on_temperature_sensor_failed,
+                                                    this)) {
+        return ESP_ERR_NO_MEM;
+    }
     uart_vprintf = esp_log_set_vprintf(&capture_log);
     ESP_RETURN_ON_ERROR(mdns_init(), TAG, "Failed to initialize mDNS");
     ESP_RETURN_ON_ERROR(mdns_hostname_set(HOSTNAME), TAG, "Failed to set mDNS hostname");
@@ -226,9 +226,9 @@ esp_err_t start_web_server(TemperatureAcquisition& temperature_acquisition) {
         httpd_uri_t{"/style.css", HTTP_GET, &send_asset, &style_asset},
         httpd_uri_t{"/app.js", HTTP_GET, &send_asset, &app_asset},
         httpd_uri_t{"/reflow-profile.js", HTTP_GET, &send_asset, &profile_asset},
-        httpd_uri_t{"/api/status", HTTP_GET, &send_status, nullptr},
+        httpd_uri_t{"/api/status", HTTP_GET, &send_status, this},
         httpd_uri_t{"/api/logs", HTTP_GET, &send_logs, nullptr},
-        httpd_uri_t{"/ota", HTTP_POST, &handle_ota_trigger, nullptr},
+        httpd_uri_t{"/ota", HTTP_POST, &handle_ota_trigger, this},
     };
 
     for (const httpd_uri_t& endpoint : endpoints) {
@@ -238,6 +238,15 @@ esp_err_t start_web_server(TemperatureAcquisition& temperature_acquisition) {
 
     ESP_LOGI(TAG, "Listening at http://%s.local", HOSTNAME);
     return ESP_OK;
+}
+
+void WebServer::on_temperature_measured(const TemperatureMeasured& message) noexcept {
+    temperature_celsius_.store(message.temperature_celsius);
+    has_temperature_.store(true);
+}
+
+void WebServer::on_temperature_sensor_failed(const TemperatureSensorFailed&) noexcept {
+    has_temperature_.store(false);
 }
 
 }  // namespace reflowCtrl

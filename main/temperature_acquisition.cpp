@@ -32,34 +32,6 @@ esp_err_t TemperatureAcquisition::start() noexcept {
     return ESP_OK;
 }
 
-std::optional<float> TemperatureAcquisition::temperature_celsius() const noexcept {
-    portENTER_CRITICAL(&lock_);
-    const bool has_valid_temperature = status_ == TemperatureStatus::Valid;
-    const float temperature = latest_temperature_celsius_;
-    portEXIT_CRITICAL(&lock_);
-
-    if (!has_valid_temperature) {
-        return std::nullopt;
-    }
-
-    return std::optional<float>{temperature};
-}
-
-TemperatureStatus TemperatureAcquisition::status() const noexcept {
-    portENTER_CRITICAL(&lock_);
-    const TemperatureStatus current_status = status_;
-    portEXIT_CRITICAL(&lock_);
-    return current_status;
-}
-
-void TemperatureAcquisition::set_callback(const TemperatureCallback callback,
-                                          void* const context) noexcept {
-    portENTER_CRITICAL(&lock_);
-    callback_ = callback;
-    callback_context_ = context;
-    portEXIT_CRITICAL(&lock_);
-}
-
 void TemperatureAcquisition::task_entry(void* const context) {
     static_cast<TemperatureAcquisition*>(context)->task_loop();
 }
@@ -97,39 +69,18 @@ void TemperatureAcquisition::acquire_sample() noexcept {
 }
 
 void TemperatureAcquisition::publish_temperature(const float temperature_celsius) noexcept {
-    TemperatureCallback callback = nullptr;
-    void* callback_context = nullptr;
-    bool recovered_from_sensor_error = false;
-
-    portENTER_CRITICAL(&lock_);
-    recovered_from_sensor_error = status_ == TemperatureStatus::SensorError;
-    latest_temperature_celsius_ = temperature_celsius;
-    status_ = TemperatureStatus::Valid;
-    callback = callback_;
-    callback_context = callback_context_;
-    last_sensor_error_ = ESP_OK;
-    portEXIT_CRITICAL(&lock_);
-
-    if (recovered_from_sensor_error) {
+    if (sensor_failed_) {
         ESP_LOGI(TAG, "MAX6675 readings recovered");
+        sensor_failed_ = false;
     }
-
-    if (callback != nullptr) {
-        callback(temperature_celsius, callback_context);
-    }
+    bus_.publish(TemperatureMeasured{temperature_celsius});
 }
 
 void TemperatureAcquisition::publish_error(const esp_err_t error) noexcept {
-    bool should_log_error = false;
-
-    portENTER_CRITICAL(&lock_);
-    should_log_error = status_ != TemperatureStatus::SensorError || last_sensor_error_ != error;
-    status_ = TemperatureStatus::SensorError;
-    last_sensor_error_ = error;
-    portEXIT_CRITICAL(&lock_);
-
-    if (should_log_error) {
+    if (!sensor_failed_) {
+        sensor_failed_ = true;
         ESP_LOGW(TAG, "MAX6675 read failed: %s", esp_err_to_name(error));
+        bus_.publish(TemperatureSensorFailed{});
     }
 }
 
