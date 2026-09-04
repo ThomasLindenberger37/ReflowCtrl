@@ -4,7 +4,10 @@ idf_component_register(
         "message_bus.cpp"
         "components/button.cpp"
         "components/button_press_logger.cpp"
+        "components/characterization_controller.cpp"
+        "components/characterization_sequence.cpp"
         "components/max6675.cpp"
+        "components/characterization_live_feed.cpp"
         "components/relay_output.cpp"
         "components/status_led.cpp"
         "components/temperature_acquisition.cpp"
@@ -18,6 +21,7 @@ idf_component_register(
         "../webserver/frontend/index.html"
         "../webserver/frontend/style.css"
         "../webserver/frontend/app.js"
+        "../webserver/frontend/characterization-analyzer.js"
         "../webserver/frontend/reflow-profile.js"
     REQUIRES
         app_update
@@ -29,6 +33,7 @@ idf_component_register(
         esp_http_server
         esp_https_ota
         esp_netif
+        esp_timer
         esp_wifi
         nvs_flash
 )

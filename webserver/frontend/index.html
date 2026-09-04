@@ -14,6 +14,7 @@
     rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
   <script src="/reflow-profile.js?v=embedded-api-1" defer></script>
+  <script src="/characterization-analyzer.js?v=embedded-api-1" defer></script>
   <script src="/app.js?v=embedded-api-1" defer></script>
 </head>
 
@@ -361,11 +362,18 @@
         <button id="characterizationClose" class="close-button" type="button" aria-label="Close characterization">×</button>
       </header>
       <div class="characterization-content">
-        <div class="characterization-status"><span id="characterizationState" data-state="ready">READY</span><strong id="characterizationTemperature">--.- °C</strong><span id="characterizationElapsed">00:00</span></div>
+        <div class="characterization-status"><span id="characterizationState" data-state="ready">READY</span><strong id="characterizationTemperature">--.- °C</strong><span id="characterizationHeater">HEATER OFF</span><span id="characterizationElapsed">00:00</span></div>
         <div class="characterization-chart"><svg viewBox="0 0 720 260" role="img" aria-label="Temperature history"><polyline id="characterizationCurve" points=""></polyline><text id="characterizationAxisMin" x="4" y="248">0 °C</text><text id="characterizationAxisMax" x="4" y="18">250 °C</text></svg><p id="characterizationEmpty">Start a measurement to record the temperature curve.</p></div>
+        <pre id="characterizationTerminal" class="characterization-terminal" aria-label="Live CSV preview">time_ms,temperature_c,heater_output,phase</pre>
         <p id="characterizationMessage" class="characterization-message">The relay remains off until the measurement is started.</p>
+        <section class="characterization-analysis" aria-labelledby="characterizationAnalysisTitle">
+          <div><p class="eyebrow">CHARACTERIZATION ANALYSIS</p><h3 id="characterizationAnalysisTitle">Load a CSV to analyze its thermal behavior</h3></div>
+          <p id="characterizationAnalysisSummary" class="characterization-analysis-summary">No CSV loaded.</p>
+          <ul id="characterizationQuality" class="characterization-quality"></ul>
+          <div class="characterization-analysis-charts"><canvas id="characterizationHeatingChart" width="360" height="180" aria-label="Heating rate by temperature"></canvas><canvas id="characterizationCoolingChart" width="360" height="180" aria-label="Passive cooling rate by temperature"></canvas><canvas id="characterizationOvershootChart" width="360" height="180" aria-label="Coast overshoot by temperature"></canvas></div>
+        </section>
       </div>
-      <footer class="characterization-footer"><button id="characterizationStart" class="button button-primary" type="button">Start measurement</button></footer>
+      <footer class="characterization-footer"><input id="characterizationFile" type="file" accept=".csv,text/csv" hidden><button id="characterizationLoad" class="button button-secondary" type="button">Load CSV</button><button id="characterizationDownload" class="button button-secondary" type="button">Download CSV</button><button id="characterizationDownloadConfig" class="button button-secondary" type="button" disabled>Download Configuration JSON</button><button id="characterizationStart" class="button button-primary" type="button">Start measurement</button></footer>
     </section>
   </div>
 

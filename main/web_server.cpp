@@ -23,6 +23,10 @@ extern const char style_css_start[] asm("_binary_style_css_start");
 extern const char style_css_end[] asm("_binary_style_css_end");
 extern const char app_js_start[] asm("_binary_app_js_start");
 extern const char app_js_end[] asm("_binary_app_js_end");
+extern const char characterization_analyzer_js_start[] asm(
+    "_binary_characterization_analyzer_js_start");
+extern const char characterization_analyzer_js_end[] asm(
+    "_binary_characterization_analyzer_js_end");
 extern const char reflow_profile_js_start[] asm("_binary_reflow_profile_js_start");
 extern const char reflow_profile_js_end[] asm("_binary_reflow_profile_js_end");
 
@@ -78,15 +82,15 @@ esp_err_t send_asset(httpd_req_t* request) {
 }
 
 esp_err_t send_status(httpd_req_t* request) {
-    const auto* server = static_cast<const WebServer*>(request->user_ctx);
-    const bool has_temperature = server->has_temperature();
-    const float temperature = server->temperature_celsius();
+    auto* server = static_cast<WebServer*>(request->user_ctx);
+    const CharacterizationStatus characterization = server->characterization_status();
     char response[160]{};
     std::snprintf(response, sizeof(response),
                   "{\"state\":\"%s\",\"temperature\":%.2f,\"target_temperature\":0.0,"
                   "\"heater\":%s,\"elapsed_seconds\":0}",
-                  has_temperature ? "idle" : "error", static_cast<double>(temperature),
-                  server->heater_active() ? "true" : "false");
+                  characterization.has_temperature ? "idle" : "error",
+                  static_cast<double>(characterization.temperature_celsius),
+                  characterization.heater_output ? "true" : "false");
     httpd_resp_set_type(request, "application/json");
     return httpd_resp_sendstr(request, response);
 }
@@ -197,14 +201,59 @@ esp_err_t handle_characterization_abort(httpd_req_t* request) {
     return httpd_resp_sendstr(request, "{}");
 }
 
+esp_err_t send_characterization_status(httpd_req_t* request) {
+    auto* server = static_cast<WebServer*>(request->user_ctx);
+    const CharacterizationStatus status = server->characterization_status();
+    char response[256]{};
+    std::snprintf(
+        response, sizeof(response),
+        "{\"running\":%s,\"phase\":\"%s\",\"elapsed_ms\":%lu,"
+        "\"temperature\":%.2f,\"heater_output\":%s,\"error\":\"%s\"}",
+        (status.phase >= CharacterizationPhase::baseline
+         && status.phase <= CharacterizationPhase::cooldown)
+            ? "true"
+            : "false",
+        characterization_phase_name(status.phase), static_cast<unsigned long>(status.elapsed_ms),
+        static_cast<double>(status.temperature_celsius), status.heater_output ? "true" : "false",
+        characterization_stop_reason_name(status.stop_reason));
+    httpd_resp_set_type(request, "application/json");
+    return httpd_resp_sendstr(request, response);
+}
+
+esp_err_t send_characterization_preview(httpd_req_t* request) {
+    std::uint32_t cursor = 0;
+    char query[48]{};
+    char cursor_text[16]{};
+    if (httpd_req_get_url_query_str(request, query, sizeof(query)) == ESP_OK
+        && httpd_query_key_value(query, "after", cursor_text, sizeof(cursor_text)) == ESP_OK) {
+        cursor = static_cast<std::uint32_t>(std::strtoul(cursor_text, nullptr, 10));
+    }
+
+    auto* server = static_cast<WebServer*>(request->user_ctx);
+    const CharacterizationLiveFeed::PreviewSnapshot snapshot =
+        server->characterization_preview_after(cursor);
+    httpd_resp_set_type(request, "application/json");
+    ESP_RETURN_ON_ERROR(httpd_resp_send_chunk(request, "{\"lines\":[", HTTPD_RESP_USE_STRLEN), TAG,
+                        "Failed to send characterization preview");
+    for (std::size_t index = 0; index < snapshot.count; ++index) {
+        std::array<char, CharacterizationLiveFeed::LINE_SIZE + 4> line{};
+        const int written = std::snprintf(line.data(), line.size(), "%s\"%s\"",
+                                          index == 0 ? "" : ",", snapshot.lines[index].data());
+        if (written < 0 || httpd_resp_send_chunk(request, line.data(), written) != ESP_OK) {
+            return ESP_FAIL;
+        }
+    }
+    std::array<char, 48> footer{};
+    std::snprintf(footer.data(), footer.size(), "],\"next_cursor\":%lu}",
+                  static_cast<unsigned long>(snapshot.next_cursor));
+    ESP_RETURN_ON_ERROR(httpd_resp_send_chunk(request, footer.data(), HTTPD_RESP_USE_STRLEN), TAG,
+                        "Failed to finish characterization preview");
+    return httpd_resp_send_chunk(request, nullptr, 0);
+}
+
 }  // namespace
 
 esp_err_t WebServer::start() {
-    if (!bus_.subscribe<TemperatureMeasured>(&WebServer::on_temperature_measured, this)
-        || !bus_.subscribe<TemperatureSensorFailed>(&WebServer::on_temperature_sensor_failed,
-                                                    this)) {
-        return ESP_ERR_NO_MEM;
-    }
     uart_vprintf = esp_log_set_vprintf(&capture_log);
     ESP_RETURN_ON_ERROR(mdns_init(), TAG, "Failed to initialize mDNS");
     ESP_RETURN_ON_ERROR(mdns_hostname_set(HOSTNAME), TAG, "Failed to set mDNS hostname");
@@ -226,13 +275,15 @@ esp_err_t WebServer::start() {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = HTTP_PORT;
     config.stack_size = 6144;
-    config.max_uri_handlers = 10;
+    config.max_uri_handlers = 13;
     httpd_handle_t server = nullptr;
     ESP_RETURN_ON_ERROR(httpd_start(&server, &config), TAG, "Failed to start HTTP server");
 
     static WebAsset index_asset{index_html_start, index_html_end, "text/html"};
     static WebAsset style_asset{style_css_start, style_css_end, "text/css"};
     static WebAsset app_asset{app_js_start, app_js_end, "application/javascript"};
+    static WebAsset analyzer_asset{characterization_analyzer_js_start,
+                                   characterization_analyzer_js_end, "application/javascript"};
     static WebAsset profile_asset{reflow_profile_js_start, reflow_profile_js_end,
                                   "application/javascript"};
     const std::array endpoints{
@@ -240,12 +291,16 @@ esp_err_t WebServer::start() {
         httpd_uri_t{"/index.html", HTTP_GET, &send_asset, &index_asset},
         httpd_uri_t{"/style.css", HTTP_GET, &send_asset, &style_asset},
         httpd_uri_t{"/app.js", HTTP_GET, &send_asset, &app_asset},
+        httpd_uri_t{"/characterization-analyzer.js", HTTP_GET, &send_asset, &analyzer_asset},
         httpd_uri_t{"/reflow-profile.js", HTTP_GET, &send_asset, &profile_asset},
         httpd_uri_t{"/api/status", HTTP_GET, &send_status, this},
         httpd_uri_t{"/api/logs", HTTP_GET, &send_logs, nullptr},
         httpd_uri_t{"/ota", HTTP_POST, &handle_ota_trigger, this},
         httpd_uri_t{"/api/characterization/start", HTTP_POST, &handle_characterization_start, this},
-        httpd_uri_t{"/api/characterization/abort", HTTP_POST, &handle_characterization_abort, this},
+        httpd_uri_t{"/api/characterization/stop", HTTP_POST, &handle_characterization_abort, this},
+        httpd_uri_t{"/api/characterization/status", HTTP_GET, &send_characterization_status, this},
+        httpd_uri_t{"/api/characterization/samples", HTTP_GET, &send_characterization_preview,
+                    this},
     };
 
     for (const httpd_uri_t& endpoint : endpoints) {
@@ -257,22 +312,11 @@ esp_err_t WebServer::start() {
     return ESP_OK;
 }
 
-void WebServer::on_temperature_measured(const TemperatureMeasured& message) noexcept {
-    temperature_celsius_.store(message.temperature_celsius);
-    has_temperature_.store(true);
-}
-
-void WebServer::on_temperature_sensor_failed(const TemperatureSensorFailed&) noexcept {
-    has_temperature_.store(false);
-}
-
 void WebServer::start_characterization() noexcept {
-    heater_active_.store(true);
     bus_.publish(CharacterizationStarted{});
 }
 
 void WebServer::abort_characterization() noexcept {
-    heater_active_.store(false);
     bus_.publish(CharacterizationAborted{});
 }
 

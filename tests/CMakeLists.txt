@@ -23,7 +23,9 @@ add_executable(
     log_buffer_test.cpp
     max6675_frame_test.cpp
     temperature_filter_test.cpp
+    characterization_sequence_test.cpp
     ../main/message_bus.cpp
+    ../main/components/characterization_sequence.cpp
 )
 target_compile_features(led_blinker_test PRIVATE cxx_std_23)
 target_compile_options(led_blinker_test PRIVATE -Wall -Wextra -Werror -pedantic)

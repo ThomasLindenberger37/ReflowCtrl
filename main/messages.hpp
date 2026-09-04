@@ -21,9 +21,31 @@ struct WifiConnecting {};
 
 struct WifiConnected {};
 
+enum class CharacterizationPhase : std::uint8_t {
+    idle,
+    baseline,
+    heat_1,
+    coast_1,
+    heat_2,
+    coast_2,
+    heat_3,
+    coast_3,
+    heat_4,
+    coast_4,
+    final_heat,
+    cooldown,
+    completed,
+    aborted,
+    error,
+};
+
 struct CharacterizationStarted {};
 
 struct CharacterizationAborted {};
+
+struct HeaterOutputRequested {
+    bool enabled = false;
+};
 
 struct OtaUpdateRequested {
     std::array<char, 16> server_address{};
@@ -36,7 +58,7 @@ struct ControllerStarted {};
 using MessageTypes =
     std::variant<ButtonPressed, TemperatureMeasured, TemperatureSensorFailed, WifiConnecting,
                  WifiConnected, CharacterizationStarted, CharacterizationAborted,
-                 OtaUpdateRequested, OtaUpdateStarted, ControllerStarted>;
+                 HeaterOutputRequested, OtaUpdateRequested, OtaUpdateStarted, ControllerStarted>;
 
 }  // namespace reflowCtrl
 

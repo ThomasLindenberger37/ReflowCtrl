@@ -7,7 +7,7 @@ namespace reflowCtrl {
 namespace {
 
 constexpr char TAG[] = "temperature";
-constexpr TickType_t SAMPLE_PERIOD = pdMS_TO_TICKS(250);
+constexpr TickType_t SAMPLE_PERIOD = pdMS_TO_TICKS(200);
 constexpr std::uint32_t SAMPLES_PER_LOG = 4;
 constexpr std::uint32_t TASK_STACK_SIZE = 4096;
 constexpr UBaseType_t TASK_PRIORITY = 5;

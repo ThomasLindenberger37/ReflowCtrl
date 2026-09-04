@@ -82,7 +82,6 @@ function updateStatus(status) {
     addChartPoint(status);
     lastElapsed = status.elapsed_seconds;
   }
-  characterization.recordTemperature(status.temperature);
 }
 
 function setConnection(online) {
@@ -207,11 +206,17 @@ function downloadDebugLog() {
 const characterization = {
   backdrop: document.querySelector("#characterizationBackdrop"), close: document.querySelector("#characterizationClose"),
   start: document.querySelector("#characterizationStart"),
+  download: document.querySelector("#characterizationDownload"),
+  load: document.querySelector("#characterizationLoad"), file: document.querySelector("#characterizationFile"),
+  downloadConfig: document.querySelector("#characterizationDownloadConfig"),
   state: document.querySelector("#characterizationState"), temperature: document.querySelector("#characterizationTemperature"),
   elapsed: document.querySelector("#characterizationElapsed"), curve: document.querySelector("#characterizationCurve"),
   axisMin: document.querySelector("#characterizationAxisMin"), axisMax: document.querySelector("#characterizationAxisMax"),
   empty: document.querySelector("#characterizationEmpty"), message: document.querySelector("#characterizationMessage"),
-  running: false, startedAt: 0, samples: []
+  heater: document.querySelector("#characterizationHeater"), terminal: document.querySelector("#characterizationTerminal"),
+  quality: document.querySelector("#characterizationQuality"), summary: document.querySelector("#characterizationAnalysisSummary"),
+  heatingChart: document.querySelector("#characterizationHeatingChart"), coolingChart: document.querySelector("#characterizationCoolingChart"), overshootChart: document.querySelector("#characterizationOvershootChart"),
+  running: false, cursor: 0, samples: [], csvLines: ["time_ms,temperature_c,heater_output,phase"], analysis: null, sourceName: "characterization"
 };
 
 function drawCharacterizationChart() {
@@ -226,23 +231,19 @@ function drawCharacterizationChart() {
   characterization.axisMax.textContent = `${maximum} °C`;
 }
 
-function recordCharacterizationTemperature(temperature) {
-  if (!characterization.running || !Number.isFinite(Number(temperature))) return;
-  const elapsed = Math.floor((Date.now() - characterization.startedAt) / 1000);
-  characterization.samples.push({ time: elapsed, temperature: Number(temperature) });
+function recordCharacterizationTemperature(timeMs, temperature) {
+  if (!Number.isFinite(Number(temperature))) return;
+  characterization.samples.push({ time: Number(timeMs) / 1000, temperature: Number(temperature) });
   if (characterization.samples.length > 300) characterization.samples.shift();
   characterization.temperature.textContent = `${Number(temperature).toFixed(1)} °C`;
-  characterization.elapsed.textContent = formatTime(elapsed);
   characterization.empty.hidden = true;
   drawCharacterizationChart();
 }
 
-characterization.recordTemperature = recordCharacterizationTemperature;
-
 function openCharacterization() {
   characterization.backdrop.hidden = false;
   document.body.classList.add("modal-open");
-  if (lastControllerStatus) characterization.temperature.textContent = `${Number(lastControllerStatus.temperature).toFixed(1)} °C`;
+  pollCharacterization();
 }
 
 function closeCharacterization() {
@@ -255,24 +256,115 @@ function closeCharacterization() {
 async function startCharacterization() {
   try {
     await apiRequest("/characterization/start", { method: "POST" });
-    characterization.running = true; characterization.startedAt = Date.now(); characterization.samples = [];
-    characterization.curve.setAttribute("points", ""); characterization.state.textContent = "MEASURING";
-    characterization.state.dataset.state = "running"; characterization.message.textContent = "Measurement in progress. The relay is enabled.";
-    characterization.start.textContent = "Abort measurement"; characterization.start.classList.add("button-danger"); characterization.empty.hidden = false;
+    characterization.cursor = 0; characterization.samples = [];
+    characterization.csvLines = ["time_ms,temperature_c,heater_output,phase"];
+    characterization.curve.setAttribute("points", ""); characterization.empty.hidden = false;
+    characterization.terminal.textContent = "time_ms,temperature_c,heater_output,phase";
+    await pollCharacterization();
   } catch (error) { characterization.message.textContent = `Could not start measurement: ${error.message}`; }
 }
 
 async function abortCharacterization() {
   try {
-    await apiRequest("/characterization/abort", { method: "POST" });
-    characterization.running = false; characterization.state.textContent = "ABORTED"; characterization.state.dataset.state = "aborted";
-    characterization.message.textContent = "Measurement aborted. The relay is disabled."; characterization.start.textContent = "Start measurement"; characterization.start.classList.remove("button-danger");
+    await apiRequest("/characterization/stop", { method: "POST" });
+    await pollCharacterization();
   } catch (error) { characterization.message.textContent = `Could not abort measurement: ${error.message}`; }
 }
 
 function toggleCharacterization() {
   if (characterization.running) abortCharacterization();
   else startCharacterization();
+}
+
+function downloadCharacterizationCsv() {
+  if (characterization.csvLines.length < 2) {
+    characterization.message.textContent = "No measurement samples have reached this browser yet.";
+    return;
+  }
+  const blob = new Blob([`${characterization.csvLines.join("\n")}\n`], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url; link.download = "characterization.csv"; link.click();
+  URL.revokeObjectURL(url);
+}
+
+function drawAnalysisChart(canvas, title, points, color) {
+  const context = canvas.getContext("2d"); const width = canvas.width; const height = canvas.height;
+  context.clearRect(0, 0, width, height); context.fillStyle = "#71808a"; context.font = "10px DM Mono"; context.fillText(title, 10, 16);
+  if (!points.length) { context.fillText("Insufficient data", 10, 94); return; }
+  const xs = points.map(point => point.x), ys = points.map(point => point.y);
+  const xMin = Math.min(...xs), xMax = Math.max(...xs), yMin = Math.min(0, ...ys), yMax = Math.max(0, ...ys);
+  const xSpan = Math.max(1, xMax - xMin), ySpan = Math.max(.1, yMax - yMin);
+  const mapX = value => 28 + (value - xMin) / xSpan * (width - 38); const mapY = value => height - 24 - (value - yMin) / ySpan * (height - 48);
+  context.strokeStyle = "#2a353d"; context.beginPath(); context.moveTo(28, 24); context.lineTo(28, height - 24); context.lineTo(width - 10, height - 24); context.stroke();
+  context.strokeStyle = color; context.lineWidth = 2; context.beginPath(); points.forEach((point, index) => index ? context.lineTo(mapX(point.x), mapY(point.y)) : context.moveTo(mapX(point.x), mapY(point.y))); context.stroke();
+  context.fillStyle = "#71808a"; context.fillText(`${xMin.toFixed(0)} °C`, 28, height - 8); context.fillText(`${xMax.toFixed(0)} °C`, width - 46, height - 8); context.fillText(`${yMax.toFixed(2)}`, 2, 30); context.fillText(`${yMin.toFixed(2)}`, 2, height - 26);
+}
+
+function renderAnalysis(result) {
+  characterization.analysis = result;
+  const { summary, dataQuality } = result;
+  characterization.summary.textContent = `${dataQuality.usedSamples} usable / ${dataQuality.inputSamples} total samples · ${summary.minimumTemperatureC.toFixed(1)} °C → ${summary.maximumTemperatureC.toFixed(1)} °C · max heating ${summary.maximumHeatingRateCPerSecond ?? "—"} °C/s · max overshoot ${summary.maximumObservedOvershootC ?? "—"} °C`;
+  characterization.quality.replaceChildren(...dataQuality.warnings.map(warning => { const item = document.createElement("li"); item.textContent = warning; return item; }));
+  drawAnalysisChart(characterization.heatingChart, "HEATING RATE °C/s", result.heatingRate.map(point => ({ x: point.temperatureC, y: point.rateCPerSecond })), "#e5ff45");
+  drawAnalysisChart(characterization.coolingChart, "PASSIVE COOLING °C/s", result.passiveCoolingRate.map(point => ({ x: point.temperatureC, y: point.rateCPerSecond })), "#78bbdf");
+  drawAnalysisChart(characterization.overshootChart, "COAST OVERSHOOT °C", result.coastOvershoot.map(point => ({ x: point.temperatureC, y: point.overshootC })), "#ff9a65");
+  characterization.downloadConfig.disabled = false;
+}
+
+async function loadCharacterizationCsv(event) {
+  const [file] = event.target.files; if (!file) return;
+  try {
+    const analysis = window.CharacterizationAnalyzer.analyze(await file.text());
+    characterization.sourceName = file.name.replace(/\.csv$/i, "") || "characterization";
+    renderAnalysis(analysis.result); characterization.message.textContent = `Analyzed ${file.name}.`;
+  } catch (error) { characterization.summary.textContent = `CSV analysis failed: ${error.message}`; characterization.downloadConfig.disabled = true; }
+  finally { event.target.value = ""; }
+}
+
+function downloadConfigurationJson() {
+  if (!characterization.analysis) return;
+  const blob = new Blob([`${JSON.stringify(characterization.analysis, null, 2)}\n`], { type: "application/json" });
+  const url = URL.createObjectURL(blob); const link = document.createElement("a");
+  link.href = url; link.download = `${characterization.sourceName}.configuration.json`; link.click(); URL.revokeObjectURL(url);
+}
+
+function updateCharacterizationStatus(status) {
+  characterization.running = status.running;
+  characterization.state.textContent = String(status.phase).replaceAll("_", " ").toUpperCase();
+  characterization.state.dataset.state = status.running ? "running" : status.phase === "aborted" || status.phase === "error" ? "aborted" : "ready";
+  characterization.temperature.textContent = `${Number(status.temperature).toFixed(1)} °C`;
+  characterization.heater.textContent = `HEATER ${status.heater_output ? "ON" : "OFF"}`;
+  characterization.elapsed.textContent = formatTime(Math.floor(Number(status.elapsed_ms) / 1000));
+  characterization.start.textContent = status.running ? "Abort measurement" : "Start measurement";
+  characterization.start.classList.toggle("button-danger", status.running);
+  if (status.error) characterization.message.textContent = `Measurement stopped: ${status.error.replaceAll("_", " ")}.`;
+  else if (status.running) characterization.message.textContent = "Measurement in progress. The relay follows the automatic sequence.";
+  else if (status.phase === "completed") characterization.message.textContent = "Measurement completed. The relay is disabled.";
+}
+
+async function pollCharacterization() {
+  try {
+    const status = await apiRequest("/characterization/status");
+    updateCharacterizationStatus(status);
+    const preview = await apiRequest(`/characterization/samples?after=${characterization.cursor}`);
+    if (preview.lines.length) {
+      for (const line of preview.lines) {
+        characterization.terminal.textContent += `\n${line}`;
+        characterization.csvLines.push(line);
+        const [timeMs, temperature] = line.split(",");
+        recordCharacterizationTemperature(timeMs, temperature);
+      }
+      const terminalLines = characterization.terminal.textContent.split("\n");
+      if (terminalLines.length > 1001) {
+        characterization.terminal.textContent = [terminalLines[0], ...terminalLines.slice(-1000)].join("\n");
+      }
+      characterization.terminal.scrollTop = characterization.terminal.scrollHeight;
+    }
+    characterization.cursor = preview.next_cursor;
+  } catch (error) {
+    if (!characterization.backdrop.hidden) characterization.message.textContent = `Characterization connection unavailable: ${error.message}`;
+  }
 }
 
 async function pollStatus() {
@@ -697,12 +789,16 @@ function initialize() {
   debug.characterize.addEventListener("click", openCharacterization);
   characterization.close.addEventListener("click", closeCharacterization);
   characterization.start.addEventListener("click", toggleCharacterization);
+  characterization.download.addEventListener("click", downloadCharacterizationCsv);
+  characterization.load.addEventListener("click", () => characterization.file.click());
+  characterization.file.addEventListener("change", loadCharacterizationCsv);
+  characterization.downloadConfig.addEventListener("click", downloadConfigurationJson);
   ui.start.disabled = true; ui.start.title = "Process control is not implemented yet";
   ui.stop.disabled = true;
   profileUi.select.innerHTML = "<option>Profiles not implemented</option>";
   profileUi.select.disabled = true; profileUi.edit.disabled = true;
   settings.toggle.disabled = true; settings.toggle.title = "Settings are not implemented yet";
-  pollStatus(); setInterval(pollStatus, 1000); setInterval(pollDebugLogs, 1000);
+  pollStatus(); setInterval(pollStatus, 1000); setInterval(pollDebugLogs, 1000); setInterval(pollCharacterization, 400);
 }
 
 initialize();

@@ -447,25 +447,45 @@ from backend.main import debug_print
 debug_print("Sensor initialized")
 ```
 
-### Request oven characterization
+## Oven characterization
 
 ```http
-POST /api/characterize
+POST /api/characterization/start
 ```
 
 ```bash
-curl -X POST http://127.0.0.1:8000/api/characterize
+curl -X POST http://reflow-ctrl.local/api/characterization/start
 ```
 
-Current response:
+The controller publishes filtered temperatures at 200 ms intervals and executes the automatic
+baseline, heat, coast, final-heat, and cooldown sequence. Heater output is forced off for a user
+stop, sensor error, invalid temperature, 250 °C safety limit, recording error, OTA update, or the
+20-minute characterization timeout.
 
-```json
-{
-  "status": "accepted"
-}
+### Stop immediately
+
+```http
+POST /api/characterization/stop
 ```
 
-The current endpoint records the request in the debug terminal. It is the entry point for a future characterization routine.
+### Current status
+
+```http
+GET /api/characterization/status
+```
+
+The JSON response contains `running`, `phase`, `elapsed_ms`, `temperature`, `heater_output`, and
+an optional `error` stop reason.
+
+### Incremental live CSV preview
+
+```http
+GET /api/characterization/samples?after={cursor}
+```
+
+This cursor-based endpoint returns only new CSV data lines and `next_cursor`. The ESP stores only
+the latest 16 lines in a fixed-size transfer buffer. The browser accumulates the received lines
+and creates the downloadable CSV locally; no characterization data is persisted on the ESP.
 
 ## Static frontend
 
