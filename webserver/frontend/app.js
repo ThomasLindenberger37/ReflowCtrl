@@ -22,6 +22,7 @@ let lastElapsed = null;
 let toastTimer;
 let debugCursor = 0;
 let debugLineCount = 0;
+let lastControllerStatus = null;
 let profilePreviewChart;
 let activeProfileName = "";
 let editedProfileName = "";
@@ -53,6 +54,7 @@ function statusIsValid(status) {
 }
 
 function updateStatus(status) {
+  lastControllerStatus = status;
   const state = stateLabels[status.state] ? status.state : "error";
   ui.temperature.textContent = Number(status.temperature).toFixed(1);
   ui.target.textContent = Number(status.target_temperature).toFixed(1);
@@ -80,6 +82,7 @@ function updateStatus(status) {
     addChartPoint(status);
     lastElapsed = status.elapsed_seconds;
   }
+  characterization.recordTemperature(status.temperature);
 }
 
 function setConnection(online) {
@@ -201,14 +204,72 @@ function downloadDebugLog() {
   showToast(`${lines.length} log ${lines.length === 1 ? "line" : "lines"} downloaded`);
 }
 
-async function characterizeOven() {
-  debug.characterize.disabled = true;
+const characterization = {
+  backdrop: document.querySelector("#characterizationBackdrop"), close: document.querySelector("#characterizationClose"),
+  start: document.querySelector("#characterizationStart"), abort: document.querySelector("#characterizationAbort"),
+  state: document.querySelector("#characterizationState"), temperature: document.querySelector("#characterizationTemperature"),
+  elapsed: document.querySelector("#characterizationElapsed"), curve: document.querySelector("#characterizationCurve"),
+  axisMin: document.querySelector("#characterizationAxisMin"), axisMax: document.querySelector("#characterizationAxisMax"),
+  empty: document.querySelector("#characterizationEmpty"), message: document.querySelector("#characterizationMessage"),
+  running: false, startedAt: 0, samples: []
+};
+
+function drawCharacterizationChart() {
+  if (!characterization.samples.length) return;
+  const temperatures = characterization.samples.map(sample => sample.temperature);
+  const minimum = Math.max(0, Math.floor((Math.min(...temperatures) - 5) / 10) * 10);
+  const maximum = Math.ceil((Math.max(...temperatures) + 5) / 10) * 10;
+  const span = Math.max(10, maximum - minimum);
+  const lastTime = Math.max(1, characterization.samples.at(-1).time);
+  characterization.curve.setAttribute("points", characterization.samples.map(sample => `${(sample.time / lastTime * 720).toFixed(1)},${(260 - (sample.temperature - minimum) / span * 260).toFixed(1)}`).join(" "));
+  characterization.axisMin.textContent = `${minimum} °C`;
+  characterization.axisMax.textContent = `${maximum} °C`;
+}
+
+function recordCharacterizationTemperature(temperature) {
+  if (!characterization.running || !Number.isFinite(Number(temperature))) return;
+  const elapsed = Math.floor((Date.now() - characterization.startedAt) / 1000);
+  characterization.samples.push({ time: elapsed, temperature: Number(temperature) });
+  if (characterization.samples.length > 300) characterization.samples.shift();
+  characterization.temperature.textContent = `${Number(temperature).toFixed(1)} °C`;
+  characterization.elapsed.textContent = formatTime(elapsed);
+  characterization.empty.hidden = true;
+  drawCharacterizationChart();
+}
+
+characterization.recordTemperature = recordCharacterizationTemperature;
+
+function openCharacterization() {
+  characterization.backdrop.hidden = false;
+  document.body.classList.add("modal-open");
+  if (lastControllerStatus) characterization.temperature.textContent = `${Number(lastControllerStatus.temperature).toFixed(1)} °C`;
+}
+
+function closeCharacterization() {
+  if (!characterization.running) {
+    characterization.backdrop.hidden = true;
+    document.body.classList.remove("modal-open");
+  }
+}
+
+async function startCharacterization() {
+  characterization.start.disabled = true;
   try {
-    await apiRequest("/characterize", { method: "POST" });
-    await pollDebugLogs();
-    showToast("Oven characterization requested");
-  } catch (error) { showToast(error.message, true); }
-  finally { debug.characterize.disabled = false; }
+    await apiRequest("/characterization/start", { method: "POST" });
+    characterization.running = true; characterization.startedAt = Date.now(); characterization.samples = [];
+    characterization.curve.setAttribute("points", ""); characterization.state.textContent = "MEASURING";
+    characterization.state.dataset.state = "running"; characterization.message.textContent = "Measurement in progress. The relay is enabled.";
+    characterization.abort.hidden = false; characterization.empty.hidden = false;
+  } catch (error) { characterization.start.disabled = false; characterization.message.textContent = `Could not start measurement: ${error.message}`; }
+}
+
+async function abortCharacterization() {
+  characterization.abort.disabled = true;
+  try {
+    await apiRequest("/characterization/abort", { method: "POST" });
+    characterization.running = false; characterization.state.textContent = "ABORTED"; characterization.state.dataset.state = "aborted";
+    characterization.message.textContent = "Measurement aborted. The relay is disabled."; characterization.abort.hidden = true; characterization.start.disabled = false;
+  } catch (error) { characterization.abort.disabled = false; characterization.message.textContent = `Could not abort measurement: ${error.message}`; }
 }
 
 async function pollStatus() {
@@ -630,12 +691,15 @@ function initialize() {
   if (typeof Chart !== "undefined") createChart();
   debug.toggle.addEventListener("click", toggleDebug); debug.clear.addEventListener("click", clearDebugOutput);
   debug.download.addEventListener("click", downloadDebugLog);
+  debug.characterize.addEventListener("click", openCharacterization);
+  characterization.close.addEventListener("click", closeCharacterization);
+  characterization.start.addEventListener("click", startCharacterization);
+  characterization.abort.addEventListener("click", abortCharacterization);
   ui.start.disabled = true; ui.start.title = "Process control is not implemented yet";
   ui.stop.disabled = true;
   profileUi.select.innerHTML = "<option>Profiles not implemented</option>";
   profileUi.select.disabled = true; profileUi.edit.disabled = true;
   settings.toggle.disabled = true; settings.toggle.title = "Settings are not implemented yet";
-  debug.characterize.disabled = true; debug.characterize.title = "Characterization is not implemented yet";
   pollStatus(); setInterval(pollStatus, 1000); setInterval(pollDebugLogs, 1000);
 }
 

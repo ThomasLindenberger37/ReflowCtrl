@@ -16,6 +16,10 @@ Never connect or use the programming interface while the board is powered from m
 
 - Use C++ source files (`.cpp`) and C++ header files (`.hpp`) for project code.
 
+## Web UI Language
+
+All user-facing text in the embedded web UI must be written in English.
+
 
 C++ File Conventions
 

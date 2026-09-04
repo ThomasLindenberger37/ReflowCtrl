@@ -354,6 +354,21 @@
     </section>
   </div>
 
+  <div id="characterizationBackdrop" class="characterization-backdrop" hidden>
+    <section class="characterization-dialog" role="dialog" aria-modal="true" aria-labelledby="characterizationTitle">
+      <header class="characterization-header">
+        <div><p class="eyebrow">OVEN CHARACTERIZATION</p><h2 id="characterizationTitle">Measure oven heating behavior</h2><p>Record the temperature response while the measurement sequence is running.</p></div>
+        <button id="characterizationClose" class="close-button" type="button" aria-label="Close characterization">×</button>
+      </header>
+      <div class="characterization-content">
+        <div class="characterization-status"><span id="characterizationState" data-state="ready">READY</span><strong id="characterizationTemperature">--.- °C</strong><span id="characterizationElapsed">00:00</span></div>
+        <div class="characterization-chart"><svg viewBox="0 0 720 260" role="img" aria-label="Temperature history"><polyline id="characterizationCurve" points=""></polyline><text id="characterizationAxisMin" x="4" y="248">0 °C</text><text id="characterizationAxisMax" x="4" y="18">250 °C</text></svg><p id="characterizationEmpty">Start a measurement to record the temperature curve.</p></div>
+        <p id="characterizationMessage" class="characterization-message">The relay remains off until the measurement is started.</p>
+      </div>
+      <footer class="characterization-footer"><button id="characterizationAbort" class="button button-secondary" type="button" hidden>Abort measurement</button><button id="characterizationStart" class="button button-primary" type="button">Start measurement</button></footer>
+    </section>
+  </div>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 </body>
 
