@@ -209,6 +209,9 @@ const characterization = {
   download: document.querySelector("#characterizationDownload"),
   load: document.querySelector("#characterizationLoad"), file: document.querySelector("#characterizationFile"),
   downloadConfig: document.querySelector("#characterizationDownloadConfig"),
+  saveConfig: document.querySelector("#characterizationSaveConfig"),
+  storageMessage: document.querySelector("#characterizationStorageMessage"),
+  saving: false,
   state: document.querySelector("#characterizationState"), temperature: document.querySelector("#characterizationTemperature"),
   elapsed: document.querySelector("#characterizationElapsed"), curve: document.querySelector("#characterizationCurve"),
   axisMin: document.querySelector("#characterizationAxisMin"), axisMax: document.querySelector("#characterizationAxisMax"),
@@ -244,6 +247,7 @@ function openCharacterization() {
   characterization.backdrop.hidden = false;
   document.body.classList.add("modal-open");
   pollCharacterization();
+  if (!characterization.analysis) restoreCharacterizationConfiguration();
 }
 
 function closeCharacterization() {
@@ -310,16 +314,82 @@ function renderAnalysis(result) {
   drawAnalysisChart(characterization.coolingChart, "PASSIVE COOLING °C/s", result.passiveCoolingRate.map(point => ({ x: point.temperatureC, y: point.rateCPerSecond })), "#78bbdf");
   drawAnalysisChart(characterization.overshootChart, "COAST OVERSHOOT °C", result.coastOvershoot.map(point => ({ x: point.temperatureC, y: point.overshootC })), "#ff9a65");
   characterization.downloadConfig.disabled = false;
+  characterization.saveConfig.disabled = characterization.saving;
 }
 
-async function loadCharacterizationCsv(event) {
+function validateCharacterizationConfiguration(result) {
+  const finite = value => typeof value === "number" && Number.isFinite(value);
+  const nullable = value => value === null || finite(value);
+  const count = value => Number.isInteger(value) && value >= 0;
+  const curve = (points, overshoot = false) => Array.isArray(points) && points.length <= 64 && points.every(point =>
+    point && finite(point.temperatureC) && (overshoot
+      ? finite(point.overshootC) && finite(point.timeToPeakSeconds) && typeof point.phase === "string"
+      : finite(point.rateCPerSecond) && count(point.sampleCount)));
+  const summary = result?.summary, quality = result?.dataQuality;
+  if (result?.formatVersion !== 1 || result?.type !== "oven-characterization" ||
+      !finite(result.ambientTemperatureC) || !nullable(result.estimatedEquilibriumTemperatureC) ||
+      !curve(result.heatingRate) || !curve(result.passiveCoolingRate) || !curve(result.coastOvershoot, true) ||
+      !summary || !finite(summary.minimumTemperatureC) || !finite(summary.maximumTemperatureC) ||
+      !nullable(summary.maximumHeatingRateCPerSecond) || !nullable(summary.maximumObservedOvershootC) ||
+      !finite(summary.totalDurationSeconds) || !quality || !count(quality.inputSamples) || !count(quality.usedSamples) ||
+      !Array.isArray(quality.warnings) || !quality.warnings.every(warning => typeof warning === "string")) {
+    throw new Error("Invalid characterization configuration (version 1 required)");
+  }
+  if (new TextEncoder().encode(JSON.stringify(result)).length > 8192) {
+    throw new Error("Configuration exceeds the controller's 8192-byte limit");
+  }
+  return result;
+}
+
+async function loadCharacterizationFile(event) {
   const [file] = event.target.files; if (!file) return;
   try {
-    const analysis = window.CharacterizationAnalyzer.analyze(await file.text());
-    characterization.sourceName = file.name.replace(/\.csv$/i, "") || "characterization";
-    renderAnalysis(analysis.result); characterization.message.textContent = `Analyzed ${file.name}.`;
-  } catch (error) { characterization.summary.textContent = `CSV analysis failed: ${error.message}`; characterization.downloadConfig.disabled = true; }
-  finally { event.target.value = ""; }
+    const text = await file.text();
+    const result = /\.json$/i.test(file.name) ? JSON.parse(text) : window.CharacterizationAnalyzer.analyze(text).result;
+    validateCharacterizationConfiguration(result);
+    characterization.sourceName = file.name.replace(/(?:\.configuration)?\.(csv|json)$/i, "") || "characterization";
+    renderAnalysis(result);
+    characterization.storageMessage.textContent = `Loaded ${file.name}. Not saved to controller yet.`;
+  } catch (error) {
+    characterization.storageMessage.textContent = `Could not load file: ${error.message}`;
+  } finally { event.target.value = ""; }
+}
+
+async function restoreCharacterizationConfiguration() {
+  try {
+    const result = await apiRequest("/characterization/configuration", { cache: "no-store" });
+    if (characterization.analysis) return;
+    if (result === null) {
+      characterization.storageMessage.textContent = "No characterization saved on this controller.";
+      return;
+    }
+    renderAnalysis(validateCharacterizationConfiguration(result));
+    characterization.sourceName = "characterization";
+    characterization.storageMessage.textContent = "Loaded saved characterization from controller.";
+  } catch (error) {
+    if (!characterization.analysis) characterization.storageMessage.textContent = `Could not load saved characterization: ${error.message}`;
+  }
+}
+
+async function saveCharacterizationConfiguration() {
+  if (!characterization.analysis || characterization.saving) return;
+  const result = characterization.analysis;
+  characterization.saving = true;
+  characterization.saveConfig.disabled = true;
+  characterization.saveConfig.textContent = "Saving…";
+  try {
+    validateCharacterizationConfiguration(result);
+    await apiRequest("/characterization/configuration", { method: "PUT", body: JSON.stringify(result) });
+    characterization.storageMessage.textContent = characterization.analysis === result
+      ? "Saved to controller. Characterization will be available after restart."
+      : "Previous characterization saved. The newly loaded configuration is not saved yet.";
+  } catch (error) {
+    characterization.storageMessage.textContent = `Could not save characterization: ${error.message}`;
+  } finally {
+    characterization.saving = false;
+    characterization.saveConfig.disabled = !characterization.analysis;
+    characterization.saveConfig.textContent = "Save to controller";
+  }
 }
 
 function downloadConfigurationJson() {
@@ -791,8 +861,9 @@ function initialize() {
   characterization.start.addEventListener("click", toggleCharacterization);
   characterization.download.addEventListener("click", downloadCharacterizationCsv);
   characterization.load.addEventListener("click", () => characterization.file.click());
-  characterization.file.addEventListener("change", loadCharacterizationCsv);
+  characterization.file.addEventListener("change", loadCharacterizationFile);
   characterization.downloadConfig.addEventListener("click", downloadConfigurationJson);
+  characterization.saveConfig.addEventListener("click", saveCharacterizationConfiguration);
   ui.start.disabled = true; ui.start.title = "Process control is not implemented yet";
   ui.stop.disabled = true;
   profileUi.select.innerHTML = "<option>Profiles not implemented</option>";

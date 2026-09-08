@@ -367,13 +367,14 @@
         <pre id="characterizationTerminal" class="characterization-terminal" aria-label="Live CSV preview">time_ms,temperature_c,heater_output,phase</pre>
         <p id="characterizationMessage" class="characterization-message">The relay remains off until the measurement is started.</p>
         <section class="characterization-analysis" aria-labelledby="characterizationAnalysisTitle">
-          <div><p class="eyebrow">CHARACTERIZATION ANALYSIS</p><h3 id="characterizationAnalysisTitle">Load a CSV to analyze its thermal behavior</h3></div>
-          <p id="characterizationAnalysisSummary" class="characterization-analysis-summary">No CSV loaded.</p>
+          <div><p class="eyebrow">CHARACTERIZATION ANALYSIS</p><h3 id="characterizationAnalysisTitle">Oven thermal behavior</h3></div>
+          <p id="characterizationAnalysisSummary" class="characterization-analysis-summary">Load a CSV or configuration JSON, or use the saved characterization.</p>
+          <p id="characterizationStorageMessage" class="characterization-analysis-summary" role="status"></p>
           <ul id="characterizationQuality" class="characterization-quality"></ul>
           <div class="characterization-analysis-charts"><canvas id="characterizationHeatingChart" width="360" height="180" aria-label="Heating rate by temperature"></canvas><canvas id="characterizationCoolingChart" width="360" height="180" aria-label="Passive cooling rate by temperature"></canvas><canvas id="characterizationOvershootChart" width="360" height="180" aria-label="Coast overshoot by temperature"></canvas></div>
         </section>
       </div>
-      <footer class="characterization-footer"><input id="characterizationFile" type="file" accept=".csv,text/csv" hidden><button id="characterizationLoad" class="button button-secondary" type="button">Load CSV</button><button id="characterizationDownload" class="button button-secondary" type="button">Download CSV</button><button id="characterizationDownloadConfig" class="button button-secondary" type="button" disabled>Download Configuration JSON</button><button id="characterizationStart" class="button button-primary" type="button">Start measurement</button></footer>
+      <footer class="characterization-footer"><input id="characterizationFile" type="file" accept=".csv,.json,text/csv,application/json" hidden><button id="characterizationLoad" class="button button-secondary" type="button">Load CSV / JSON</button><button id="characterizationDownload" class="button button-secondary" type="button">Download CSV</button><button id="characterizationDownloadConfig" class="button button-secondary" type="button" disabled>Download Configuration JSON</button><button id="characterizationSaveConfig" class="button button-primary" type="button" disabled>Save to controller</button><button id="characterizationStart" class="button button-primary" type="button">Start measurement</button></footer>
     </section>
   </div>
 

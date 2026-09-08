@@ -48,10 +48,13 @@ On first use, the installation wizard collects WiFi credentials followed by the 
 
 The ESP32 serves the UI on port 80 at `http://reflow-ctrl.local`. The embedded
 backend currently implements `GET /api/status` for the measured temperature and
-`GET /api/logs` for the terminal output. Controls, profiles, settings, and oven
-characterization remain disabled in the embedded UI until their firmware APIs
-exist. The FastAPI mock continues to implement the complete contract for local
-frontend development. The embedded status and terminal polling have no external
+`GET /api/logs` for the terminal output, plus oven characterization and persistent
+characterization configuration. In the characterization dialog, use **Load CSV / JSON**
+and **Save to controller** to retain the analyzed thermal behavior in ESP32 flash.
+The saved analysis is restored when the dialog opens, including after a controller
+restart. Raw CSV recordings remain browser-only. Process controls, profiles, and
+settings remain disabled until their firmware APIs exist. The legacy FastAPI mock
+does not implement the embedded characterization API. The embedded status and terminal polling have no external
 web dependencies; the chart stays empty until Chart.js is bundled locally.
 
 Every ESP-IDF log line is mirrored to UART and a fixed-size RAM ring buffer. The
@@ -65,3 +68,5 @@ other imported Python code.
 ## Profile editor
 
 The profile editor stores only the compact profile parameters. The independent functions `validateProfile(config)` and `generateProfile(config)` live in `frontend/reflow-profile.js`; curve generation and the interactive preview run entirely in the browser. The generated one-second temperature curve is never sent to the backend.
+
+Characterization UI checks: `node --test tests/characterization_ui_test.js` (from the repository root).

@@ -485,7 +485,7 @@ GET /api/characterization/samples?after={cursor}
 
 This cursor-based endpoint returns only new CSV data lines and `next_cursor`. The ESP stores only
 the latest 16 lines in a fixed-size transfer buffer. The browser accumulates the received lines
-and creates the downloadable CSV locally; no characterization data is persisted on the ESP.
+and creates the downloadable CSV locally; raw CSV samples are not persisted on the ESP.
 
 ## Static frontend
 
@@ -500,3 +500,22 @@ GET /reflow-profile.js
 ```
 
 These are not API endpoints and return static files rather than JSON.
+
+### Persistent characterization configuration (ESP32)
+
+`GET /api/characterization/configuration` returns the saved version-1
+`oven-characterization` analysis object, or JSON `null` if none exists.
+Responses are not cached. Opening the characterization dialog restores it automatically.
+
+`PUT /api/characterization/configuration` replaces the saved analysis with the JSON
+request body (maximum 8192 bytes). The controller validates the version, type,
+curves, summary, and data quality before writing a single NVS blob and committing it.
+Success returns `{"saved":true}` only after commit. Invalid documents return HTTP 400;
+storage failures return HTTP 500. Both contain an English `detail` message.
+An incomplete upload closes the connection without saving.
+
+Use **Load CSV / JSON** to analyze a CSV or import an existing configuration JSON,
+then **Save to controller**. The saved analysis survives browser and controller
+restarts; a subsequent save replaces it. Erasing NVS also erases this configuration.
+Storage does not yet apply the analysis to process control. This endpoint is
+implemented in the ESP32 firmware; the legacy Python mock does not implement it.

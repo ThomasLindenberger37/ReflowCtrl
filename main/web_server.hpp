@@ -1,4 +1,5 @@
-#pragma once
+#ifndef REFLOWCTRL_WEB_SERVER_HPP
+#define REFLOWCTRL_WEB_SERVER_HPP
 
 #include "components/characterization_controller.hpp"
 #include "esp_err.h"
@@ -31,3 +32,5 @@ class WebServer {
 };
 
 }  // namespace reflowCtrl
+
+#endif  // REFLOWCTRL_WEB_SERVER_HPP

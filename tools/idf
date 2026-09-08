@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+set -eo pipefail
+
+# VS Code tasks do not load the interactive shell's ESP-IDF environment.
+if ! command -v idf.py >/dev/null 2>&1; then
+    idf_export="${IDF_PATH:-/opt/esp-idf}/export.sh"
+    if [[ ! -r "${idf_export}" ]]; then
+        echo "ESP-IDF is unavailable. Reopen this workspace in its Dev Container, or set IDF_PATH to your ESP-IDF installation." >&2
+        exit 127
+    fi
+    # ESP-IDF is installed externally at the runtime-selected location.
+    # shellcheck source=/dev/null
+    source "${idf_export}"
+fi
+
+# Flash/monitor tasks supply their selected port explicitly with -p.
+exec env -u ESPPORT idf.py "$@"

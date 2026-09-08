@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(reflowCtrl_unit_tests LANGUAGES CXX)
+project(reflowCtrl_unit_tests LANGUAGES C CXX)
 
 include(FetchContent)
 
@@ -39,3 +39,25 @@ target_link_libraries(led_blinker_test PRIVATE GTest::gtest_main)
 
 include(GoogleTest)
 gtest_discover_tests(led_blinker_test)
+
+# Prefer the firmware dependency; host tests also work before an ESP-IDF build.
+set(characterization_json_dir "${CMAKE_CURRENT_LIST_DIR}/../managed_components/espressif__cjson/cJSON")
+if(NOT EXISTS "${characterization_json_dir}/cJSON.c")
+    FetchContent_Declare(characterization_cjson
+        GIT_REPOSITORY https://github.com/DaveGamble/cJSON.git
+        GIT_TAG v1.7.19
+        GIT_SHALLOW TRUE
+        SOURCE_SUBDIR source_only)
+    FetchContent_MakeAvailable(characterization_cjson)
+    set(characterization_json_dir "${characterization_cjson_SOURCE_DIR}")
+endif()
+add_library(characterization_json STATIC "${characterization_json_dir}/cJSON.c")
+target_include_directories(characterization_json SYSTEM PUBLIC "${characterization_json_dir}")
+add_executable(characterization_configuration_test
+    characterization_configuration_test.cpp
+    ../main/characterization_configuration.cpp)
+target_compile_features(characterization_configuration_test PRIVATE cxx_std_23)
+target_compile_options(characterization_configuration_test PRIVATE -Wall -Wextra -Werror -pedantic)
+target_include_directories(characterization_configuration_test PRIVATE ../main)
+target_link_libraries(characterization_configuration_test PRIVATE characterization_json GTest::gtest_main)
+gtest_discover_tests(characterization_configuration_test)

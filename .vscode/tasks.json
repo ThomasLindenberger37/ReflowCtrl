@@ -3,12 +3,10 @@
   "tasks": [
     {
       "label": "ESP-IDF: Build",
-      "type": "shell",
-      "command": "env",
+      "type": "process",
+      "command": "bash",
       "args": [
-        "-u",
-        "ESPPORT",
-        "idf.py",
+        "${workspaceFolder}/tools/idf",
         "build"
       ],
       "options": {
@@ -29,12 +27,10 @@
     },
     {
       "label": "ESP-IDF: Flash",
-      "type": "shell",
-      "command": "env",
+      "type": "process",
+      "command": "bash",
       "args": [
-        "-u",
-        "ESPPORT",
-        "idf.py",
+        "${workspaceFolder}/tools/idf",
         "-p",
         "${config:reflowPilot.serialPort}",
         "flash"
@@ -51,12 +47,10 @@
     },
     {
       "label": "ESP-IDF: Monitor",
-      "type": "shell",
-      "command": "env",
+      "type": "process",
+      "command": "bash",
       "args": [
-        "-u",
-        "ESPPORT",
-        "idf.py",
+        "${workspaceFolder}/tools/idf",
         "-p",
         "${config:reflowPilot.serialPort}",
         "monitor"
@@ -74,12 +68,10 @@
     },
     {
       "label": "ESP-IDF: Flash + Monitor",
-      "type": "shell",
-      "command": "env",
+      "type": "process",
+      "command": "bash",
       "args": [
-        "-u",
-        "ESPPORT",
-        "idf.py",
+        "${workspaceFolder}/tools/idf",
         "-p",
         "${config:reflowPilot.serialPort}",
         "flash",
@@ -171,12 +163,10 @@
     },
     {
       "label": "ESP-IDF: Clean",
-      "type": "shell",
-      "command": "env",
+      "type": "process",
+      "command": "bash",
       "args": [
-        "-u",
-        "ESPPORT",
-        "idf.py",
+        "${workspaceFolder}/tools/idf",
         "clean"
       ],
       "options": {

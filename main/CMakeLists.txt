@@ -1,6 +1,8 @@
 idf_component_register(
     SRCS
         "main.cpp"
+        "characterization_configuration.cpp"
+        "characterization_storage.cpp"
         "message_bus.cpp"
         "components/button.cpp"
         "components/button_press_logger.cpp"

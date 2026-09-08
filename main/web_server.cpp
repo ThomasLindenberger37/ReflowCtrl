@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "characterization_storage.hpp"
 #include "esp_check.h"
 #include "esp_event.h"
 #include "esp_http_server.h"
@@ -145,6 +146,8 @@ esp_err_t send_logs(httpd_req_t* request) {
 
 esp_err_t announce_mdns(esp_netif_t* network_interface) {
     constexpr auto ACTIONS =
+        // The mDNS API explicitly accepts combined event flags.
+        // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
         static_cast<mdns_event_actions_t>(MDNS_EVENT_ENABLE_IP4 | MDNS_EVENT_ANNOUNCE_IP4);
     return mdns_netif_action(network_interface, ACTIONS);
 }
@@ -275,7 +278,7 @@ esp_err_t WebServer::start() {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = HTTP_PORT;
     config.stack_size = 6144;
-    config.max_uri_handlers = 13;
+    config.max_uri_handlers = 15;
     httpd_handle_t server = nullptr;
     ESP_RETURN_ON_ERROR(httpd_start(&server, &config), TAG, "Failed to start HTTP server");
 
@@ -307,6 +310,9 @@ esp_err_t WebServer::start() {
         ESP_RETURN_ON_ERROR(httpd_register_uri_handler(server, &endpoint), TAG,
                             "Failed to register %s", endpoint.uri);
     }
+
+    ESP_RETURN_ON_ERROR(register_characterization_storage(server), TAG,
+                        "Failed to register characterization storage");
 
     ESP_LOGI(TAG, "Listening at http://%s.local", HOSTNAME);
     return ESP_OK;
