@@ -3,6 +3,7 @@
 #include "components/characterization_controller.hpp"
 #include "components/characterization_live_feed.hpp"
 #include "components/max6675.hpp"
+#include "components/reflow_controller.hpp"
 #include "components/relay_output.hpp"
 #include "components/status_led.hpp"
 #include "components/temperature_acquisition.hpp"
@@ -42,10 +43,11 @@ extern "C" void app_main() {
     static reflowCtrl::ButtonPressLogger button_logger(bus);
     static reflowCtrl::CharacterizationLiveFeed characterization_live_feed;
     static reflowCtrl::CharacterizationController characterization(bus, characterization_live_feed);
+    static reflowCtrl::ReflowController reflow(bus);
     static reflowCtrl::Max6675 max6675(max6675_so_pin, max6675_sck_pin, max6675_cs_pin);
     static reflowCtrl::TemperatureAcquisition temperature_acquisition(bus, max6675);
     static reflowCtrl::OtaUpdater ota_updater(bus);
-    static reflowCtrl::WebServer web_server(bus, characterization);
+    static reflowCtrl::WebServer web_server(bus, characterization, reflow);
 
     ESP_ERROR_CHECK(status_led_pin.initialize(false));
     ESP_ERROR_CHECK(relay_pin.initialize(false));
@@ -57,6 +59,7 @@ extern "C" void app_main() {
     ESP_ERROR_CHECK(relay.start());
     ESP_ERROR_CHECK(button_logger.start());
     ESP_ERROR_CHECK(characterization.start());
+    ESP_ERROR_CHECK(reflow.start());
     ESP_LOGI(TAG, "Hardware configuration applied");
 
     ESP_ERROR_CHECK(reflowCtrl::start_wifi_station(bus));
@@ -69,7 +72,7 @@ extern "C" void app_main() {
     while (true) {
         status_led.tick(10);
         button.tick();
-        web_server.tick();
+        reflow.tick();
         vTaskDelay(UPDATE_PERIOD);
     }
 }

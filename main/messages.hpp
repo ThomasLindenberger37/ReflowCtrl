@@ -55,10 +55,15 @@ struct OtaUpdateStarted {};
 
 struct ControllerStarted {};
 
+struct ReflowStarted {};
+
+struct ReflowAborted {};
+
 using MessageTypes =
     std::variant<ButtonPressed, TemperatureMeasured, TemperatureSensorFailed, WifiConnecting,
                  WifiConnected, CharacterizationStarted, CharacterizationAborted,
-                 HeaterOutputRequested, OtaUpdateRequested, OtaUpdateStarted, ControllerStarted>;
+                 HeaterOutputRequested, OtaUpdateRequested, OtaUpdateStarted, ControllerStarted,
+                 ReflowStarted, ReflowAborted>;
 
 }  // namespace reflowCtrl
 

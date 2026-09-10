@@ -3,7 +3,7 @@
 const API = "/api";
 const MAX_CHART_POINTS = 300;
 const SAFE_START_TEMPERATURE = 40;
-const CONTROLS_AVAILABLE = false;
+const CONTROLS_AVAILABLE = true;
 const stateLabels = { idle: "Idle", preheat: "Preheat", soak: "Soak", reflow: "Reflow", cooling: "Cooling", complete: "Complete", error: "Error" };
 
 const ui = {
@@ -12,6 +12,7 @@ const ui = {
   heaterIcon: document.querySelector("#heaterIcon"), heaterHint: document.querySelector("#heaterHint"),
   elapsed: document.querySelector("#elapsedTime"), stateBadge: document.querySelector("#stateBadge"),
   start: document.querySelector("#startButton"), stop: document.querySelector("#stopButton"),
+  reflowCsvDownload: document.querySelector("#reflowCsvDownload"),
   connectionDot: document.querySelector("#connectionDot"), connectionText: document.querySelector("#connectionText"),
   apiStatus: document.querySelector("#apiStatus"), processTitle: document.querySelector("#processTitle"),
   processNote: document.querySelector("#processNote"), toast: document.querySelector("#toast")
@@ -30,6 +31,9 @@ let activeProfileHighlight = null;
 let profilePreviewRequest = 0;
 let profilePreviewTimer;
 let profilePreviewAbortController;
+let reflowSamples = [];
+let reflowRecording = false;
+let lastRecordedReflowSecond = null;
 const availableProfiles = new Map();
 
 async function apiRequest(path, options = {}) {
@@ -57,7 +61,6 @@ function statusIsValid(status) {
 }
 
 function updateStatus(status) {
-  lastControllerStatus = status;
   const state = stateLabels[status.state] ? status.state : "error";
   ui.temperature.textContent = Number(status.temperature).toFixed(1);
   ui.target.textContent = Number(status.target_temperature).toFixed(1);
@@ -70,12 +73,15 @@ function updateStatus(status) {
   ui.stateBadge.querySelector("b").textContent = stateLabels[state].toUpperCase();
 
   const active = ["preheat", "soak", "reflow", "cooling"].includes(state);
+  captureReflowSample(status, active);
+  lastControllerStatus = status;
   const temperatureLocked = status.temperature > SAFE_START_TEMPERATURE;
   ui.start.disabled = !CONTROLS_AVAILABLE || active || temperatureLocked;
   ui.start.classList.toggle("temperature-locked", temperatureLocked && !active);
   ui.start.title = temperatureLocked ? `Oven must cool to ${SAFE_START_TEMPERATURE.toFixed(1)} °C before starting` : "";
   ui.start.setAttribute("aria-label", temperatureLocked ? `Start disabled. Oven temperature is ${Number(status.temperature).toFixed(1)} degrees Celsius.` : "Start reflow process");
   ui.stop.disabled = !CONTROLS_AVAILABLE || !active;
+  ui.reflowCsvDownload.disabled = active || reflowSamples.length === 0;
   profileUi.select.disabled = active || availableProfiles.size === 0;
   profileUi.edit.disabled = active || !profileUi.select.value;
   ui.processTitle.textContent = active ? `${stateLabels[state]} in progress` : temperatureLocked ? "Oven cooling down" : state === "complete" ? "Profile complete" : "Ready for a new process";
@@ -85,6 +91,46 @@ function updateStatus(status) {
     addChartPoint(status);
     lastElapsed = status.elapsed_seconds;
   }
+}
+
+function beginReflowRecording() {
+  reflowSamples = [];
+  reflowRecording = true;
+  lastRecordedReflowSecond = null;
+  ui.reflowCsvDownload.disabled = true;
+}
+
+function captureReflowSample(status, active) {
+  if (active && (!reflowRecording || (lastRecordedReflowSecond !== null && status.elapsed_seconds < lastRecordedReflowSecond))) {
+    beginReflowRecording();
+  }
+  if (active && status.elapsed_seconds !== lastRecordedReflowSecond) {
+    reflowSamples.push({
+      elapsedSeconds: status.elapsed_seconds,
+      targetTemperatureC: Number(status.target_temperature),
+      actualTemperatureC: Number(status.temperature),
+      heaterOn: status.heater
+    });
+    lastRecordedReflowSecond = status.elapsed_seconds;
+  }
+  if (!active && reflowRecording) reflowRecording = false;
+}
+
+function downloadReflowCsv() {
+  if (reflowSamples.length === 0) return;
+  const lines = ["elapsed_seconds,target_temperature_c,actual_temperature_c,heater_on"];
+  reflowSamples.forEach(sample => {
+    lines.push(`${sample.elapsedSeconds},${sample.targetTemperatureC.toFixed(2)},${sample.actualTemperatureC.toFixed(2)},${sample.heaterOn ? "true" : "false"}`);
+  });
+  const blob = new Blob([`\uFEFF${lines.join("\r\n")}\r\n`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const timestamp = new Date().toISOString().replaceAll(":", "-").replace(".000Z", "Z");
+  link.href = url;
+  link.download = `reflow-${timestamp}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+  showToast(`${reflowSamples.length} reflow samples downloaded`);
 }
 
 function setConnection(online) {
@@ -454,7 +500,11 @@ async function pollStatus() {
 
 async function startProcess() {
   ui.start.disabled = true;
-  try { resetChart(); updateStatus(await apiRequest("/start", { method: "POST" })); showToast("Reflow profile started"); }
+  try {
+    const status = await apiRequest("/start", { method: "POST" });
+    if (["preheat", "soak", "reflow", "cooling"].includes(status.state)) beginReflowRecording();
+    resetChart(); updateStatus(status); showToast("Reflow profile started");
+  }
   catch (error) { showToast(error.message, true); }
   finally { pollStatus(); }
 }
@@ -892,6 +942,9 @@ async function saveSettings(event) {
 
 function initialize() {
   if (typeof Chart !== "undefined") createChart();
+  ui.start.addEventListener("click", startProcess);
+  ui.stop.addEventListener("click", stopProcess);
+  ui.reflowCsvDownload.addEventListener("click", downloadReflowCsv);
   debug.toggle.addEventListener("click", toggleDebug); debug.clear.addEventListener("click", clearDebugOutput);
   debug.download.addEventListener("click", downloadDebugLog);
   debug.characterize.addEventListener("click", openCharacterization);
@@ -915,7 +968,7 @@ function initialize() {
     field.addEventListener("mouseleave", () => setProfileHighlight(null));
     field.addEventListener("focusin", () => setProfileHighlight(field.dataset.highlight));
   });
-  ui.start.disabled = true; ui.start.title = "Process control is not implemented yet";
+  ui.start.disabled = true;
   ui.stop.disabled = true;
   loadProfiles();
   settings.toggle.disabled = true; settings.toggle.title = "Settings are not implemented yet";

@@ -74,7 +74,14 @@ Response:
   "temperature": 23.5,
   "target_temperature": 0.0,
   "heater": false,
-  "elapsed_seconds": 0
+  "elapsed_seconds": 0,
+  "temperature_error": 0.0,
+  "target_ramp_rate": 0.0,
+  "actual_ramp_rate": 0.0,
+  "requested_heater_power": 0,
+  "active_heater_power": 0,
+  "relay_state": false,
+  "window_progress_seconds": 0.0
 }
 ```
 
@@ -87,6 +94,13 @@ Fields:
 | `target_temperature` | number | Current controller setpoint in °C |
 | `heater` | boolean | Whether the heater output is active |
 | `elapsed_seconds` | integer | Seconds elapsed since process start |
+| `temperature_error` | number | Target minus measured temperature in °C |
+| `target_ramp_rate` | number | Current target gradient in °C/s |
+| `actual_ramp_rate` | number | Smoothed measured gradient in °C/s |
+| `requested_heater_power` | integer | Power selected for the next relay window: `0`, `25`, `50`, `75`, or `100` percent |
+| `active_heater_power` | integer | Power latched for the current four-second relay window |
+| `relay_state` | boolean | Current physical relay command |
+| `window_progress_seconds` | number | Elapsed time in the current four-second relay window |
 
 Recommended polling interval: once per second. The browser stores chart history locally; this response contains only the current sample.
 

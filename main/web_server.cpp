@@ -14,7 +14,6 @@
 #include "esp_log.h"
 #include "esp_log_write.h"
 #include "esp_netif.h"
-#include "esp_timer.h"
 #include "ipv4_address.hpp"
 #include "log_buffer.hpp"
 #include "mdns.h"
@@ -41,11 +40,6 @@ constexpr char HOSTNAME[] = "reflow-ctrl";
 constexpr uint16_t HTTP_PORT = 80;
 constexpr std::size_t SERVER_ADDRESS_SIZE = 16;
 constexpr std::size_t LOG_FORMAT_BUFFER_SIZE = 256;
-constexpr std::int64_t HEALTH_CHECK_INTERVAL_US = 5'000'000;
-constexpr std::int64_t MDNS_ANNOUNCEMENT_INTERVAL_US = 30'000'000;
-constexpr std::int64_t RESTART_COOLDOWN_US = 60'000'000;
-constexpr std::uint8_t FAILED_HEALTH_PROBES_BEFORE_RESTART = 6;
-constexpr std::uint8_t FAILED_MDNS_ANNOUNCEMENTS_BEFORE_RESTART = 3;
 LogBuffer log_buffer;
 vprintf_like_t uart_vprintf = nullptr;
 
@@ -91,16 +85,42 @@ esp_err_t send_asset(httpd_req_t* request) {
 
 esp_err_t send_status(httpd_req_t* request) {
     auto* server = static_cast<WebServer*>(request->user_ctx);
-    const CharacterizationStatus characterization = server->characterization_status();
-    char response[160]{};
-    std::snprintf(response, sizeof(response),
-                  "{\"state\":\"%s\",\"temperature\":%.2f,\"target_temperature\":0.0,"
-                  "\"heater\":%s,\"elapsed_seconds\":0}",
-                  characterization.has_temperature ? "idle" : "error",
-                  static_cast<double>(characterization.temperature_celsius),
-                  characterization.heater_output ? "true" : "false");
+    const ControllerTelemetry telemetry = server->controller_telemetry();
+    char response[512]{};
+    std::snprintf(
+        response, sizeof(response),
+        "{\"state\":\"%s\",\"temperature\":%.2f,\"target_temperature\":%.2f,"
+        "\"heater\":%s,\"elapsed_seconds\":%lu,\"temperature_error\":%.2f,"
+        "\"target_ramp_rate\":%.3f,\"actual_ramp_rate\":%.3f,"
+        "\"requested_heater_power\":%u,\"active_heater_power\":%u,"
+        "\"relay_state\":%s,\"window_progress_seconds\":%.2f}",
+        reflow_state_name(telemetry.state), static_cast<double>(telemetry.actual_temperature_c),
+        static_cast<double>(telemetry.target_temperature_c),
+        telemetry.relay_enabled ? "true" : "false",
+        static_cast<unsigned long>(telemetry.elapsed_ms / 1000),
+        static_cast<double>(telemetry.temperature_error_c),
+        static_cast<double>(telemetry.target_ramp_c_per_s),
+        static_cast<double>(telemetry.actual_ramp_c_per_s),
+        heater_power_percent(telemetry.requested_power),
+        heater_power_percent(telemetry.active_power), telemetry.relay_enabled ? "true" : "false",
+        static_cast<double>(telemetry.window_progress_ms) / 1000.0);
     httpd_resp_set_type(request, "application/json");
     return httpd_resp_sendstr(request, response);
+}
+
+esp_err_t handle_reflow_start(httpd_req_t* request) {
+    auto* server = static_cast<WebServer*>(request->user_ctx);
+    if (!server->start_reflow()) {
+        httpd_resp_set_status(request, "409 Conflict");
+        return httpd_resp_sendstr(request, "Cannot start reflow during characterization");
+    }
+    return send_status(request);
+}
+
+esp_err_t handle_reflow_stop(httpd_req_t* request) {
+    auto* server = static_cast<WebServer*>(request->user_ctx);
+    server->abort_reflow();
+    return send_status(request);
 }
 
 void append_json_escaped(char*& output, std::size_t& remaining, const char* text) {
@@ -265,50 +285,29 @@ esp_err_t send_characterization_preview(httpd_req_t* request) {
 
 esp_err_t WebServer::start() {
     uart_vprintf = esp_log_set_vprintf(&capture_log);
+    ESP_RETURN_ON_ERROR(mdns_init(), TAG, "Failed to initialize mDNS");
+    ESP_RETURN_ON_ERROR(mdns_hostname_set(HOSTNAME), TAG, "Failed to set mDNS hostname");
+    ESP_RETURN_ON_ERROR(mdns_instance_name_set("ReflowCtrl"), TAG,
+                        "Failed to set mDNS instance name");
+    ESP_RETURN_ON_ERROR(mdns_service_add("ReflowCtrl", "_http", "_tcp", HTTP_PORT, nullptr, 0), TAG,
+                        "Failed to advertise HTTP service");
     ESP_RETURN_ON_ERROR(
         esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &handle_ip_event, nullptr), TAG,
         "Failed to register mDNS reconnect handler");
-    ESP_RETURN_ON_ERROR(start_services(), TAG, "Failed to start network services");
-
-    const std::int64_t now = esp_timer_get_time();
-    next_health_check_us_ = now + HEALTH_CHECK_INTERVAL_US;
-    next_mdns_announcement_us_ = now + MDNS_ANNOUNCEMENT_INTERVAL_US;
-    return ESP_OK;
-}
-
-esp_err_t WebServer::start_mdns() noexcept {
-    const esp_err_t init_result = mdns_init();
-    if (init_result != ESP_OK) {
-        return init_result;
-    }
-    mdns_started_ = true;
-
-    esp_err_t result = mdns_hostname_set(HOSTNAME);
-    if (result == ESP_OK) {
-        result = mdns_instance_name_set("ReflowCtrl");
-    }
-    if (result == ESP_OK) {
-        result = mdns_service_add("ReflowCtrl", "_http", "_tcp", HTTP_PORT, nullptr, 0);
-    }
     esp_netif_t* station_interface = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-    if (result == ESP_OK && station_interface == nullptr) {
-        result = ESP_ERR_NOT_FOUND;
+    if (station_interface == nullptr) {
+        return ESP_ERR_NOT_FOUND;
     }
-    if (result == ESP_OK) {
-        result = announce_mdns(station_interface);
-    }
-    if (result != ESP_OK) {
-        mdns_free();
-        mdns_started_ = false;
-    }
-    return result;
+    ESP_RETURN_ON_ERROR(announce_mdns(station_interface), TAG,
+                        "Failed to announce mDNS on station interface");
+    return start_http_server();
 }
 
 esp_err_t WebServer::start_http_server() noexcept {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = HTTP_PORT;
     config.stack_size = 8192;
-    config.max_uri_handlers = 21;
+    config.max_uri_handlers = 24;
     config.uri_match_fn = httpd_uri_match_wildcard;
     esp_err_t result = httpd_start(&server_, &config);
     if (result != ESP_OK) {
@@ -331,6 +330,8 @@ esp_err_t WebServer::start_http_server() noexcept {
         httpd_uri_t{"/app.js", HTTP_GET, &send_asset, &app_asset},
         httpd_uri_t{"/characterization-analyzer.js", HTTP_GET, &send_asset, &analyzer_asset},
         httpd_uri_t{"/api/status", HTTP_GET, &send_status, this},
+        httpd_uri_t{"/api/start", HTTP_POST, &handle_reflow_start, this},
+        httpd_uri_t{"/api/stop", HTTP_POST, &handle_reflow_stop, this},
         httpd_uri_t{"/api/logs", HTTP_GET, &send_logs, nullptr},
         httpd_uri_t{"/ota", HTTP_POST, &handle_ota_trigger, this},
         httpd_uri_t{"/api/characterization/start", HTTP_POST, &handle_characterization_start, this},
@@ -363,111 +364,26 @@ esp_err_t WebServer::start_http_server() noexcept {
     return ESP_OK;
 }
 
-esp_err_t WebServer::start_services() noexcept {
-    ESP_RETURN_ON_ERROR(start_mdns(), TAG, "Failed to initialize mDNS");
-    const esp_err_t result = start_http_server();
-    if (result != ESP_OK) {
-        mdns_free();
-        mdns_started_ = false;
-    }
-    return result;
-}
-
-void WebServer::acknowledge_health_probe(void* context) noexcept {
-    auto* web_server = static_cast<WebServer*>(context);
-    web_server->health_probe_acknowledgements_.fetch_add(1, std::memory_order_relaxed);
-}
-
-void WebServer::restart_services() noexcept {
-    const std::int64_t now = esp_timer_get_time();
-    if (now < restart_not_before_us_) {
-        return;
-    }
-    restart_not_before_us_ = now + RESTART_COOLDOWN_US;
-    ESP_LOGE(TAG, "HTTP or mDNS became unresponsive; restarting both services");
-    if (server_ != nullptr) {
-        const esp_err_t stop_result = httpd_stop(server_);
-        if (stop_result != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to stop HTTP server cleanly: %s", esp_err_to_name(stop_result));
-        }
-        server_ = nullptr;
-    }
-    if (mdns_started_) {
-        mdns_free();
-        mdns_started_ = false;
-    }
-
-    const esp_err_t result = start_services();
-    if (result != ESP_OK) {
-        ESP_LOGE(TAG, "Network service restart failed: %s; retrying later",
-                 esp_err_to_name(result));
-    } else {
-        ESP_LOGI(TAG, "HTTP and mDNS services restarted");
-    }
-    pending_health_probe_ = 0;
-    failed_health_probes_ = 0;
-    failed_mdns_announcements_ = 0;
-}
-
-void WebServer::tick() noexcept {
-    const std::int64_t now = esp_timer_get_time();
-    if (now >= next_mdns_announcement_us_) {
-        next_mdns_announcement_us_ = now + MDNS_ANNOUNCEMENT_INTERVAL_US;
-        esp_netif_t* station_interface = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-        if (!mdns_started_ || station_interface == nullptr
-            || announce_mdns(station_interface) != ESP_OK) {
-            ++failed_mdns_announcements_;
-            if (failed_mdns_announcements_ >= FAILED_MDNS_ANNOUNCEMENTS_BEFORE_RESTART) {
-                restart_services();
-                return;
-            }
-        } else {
-            failed_mdns_announcements_ = 0;
-        }
-    }
-    if (now < next_health_check_us_) {
-        return;
-    }
-    next_health_check_us_ = now + HEALTH_CHECK_INTERVAL_US;
-
-    bool health_probe_pending = false;
-    if (pending_health_probe_ != 0) {
-        health_probe_pending =
-            health_probe_acknowledgements_.load(std::memory_order_relaxed) < pending_health_probe_;
-        if (health_probe_pending) {
-            ++failed_health_probes_;
-        } else {
-            failed_health_probes_ = 0;
-        }
-    }
-    if (failed_health_probes_ >= FAILED_HEALTH_PROBES_BEFORE_RESTART) {
-        restart_services();
-        return;
-    }
-    if (server_ == nullptr) {
-        restart_services();
-        return;
-    }
-    if (health_probe_pending) {
-        return;
-    }
-
-    pending_health_probe_ = health_probe_acknowledgements_.load(std::memory_order_relaxed) + 1;
-    if (httpd_queue_work(server_, &WebServer::acknowledge_health_probe, this) != ESP_OK) {
-        ++failed_health_probes_;
-        pending_health_probe_ = 0;
-        if (failed_health_probes_ >= FAILED_HEALTH_PROBES_BEFORE_RESTART) {
-            restart_services();
-        }
-    }
-}
-
 void WebServer::start_characterization() noexcept {
     bus_.publish(CharacterizationStarted{});
 }
 
 void WebServer::abort_characterization() noexcept {
     bus_.publish(CharacterizationAborted{});
+}
+
+bool WebServer::start_reflow() noexcept {
+    const CharacterizationStatus status = characterization_.status();
+    if (status.phase >= CharacterizationPhase::baseline
+        && status.phase <= CharacterizationPhase::cooldown) {
+        return false;
+    }
+    bus_.publish(ReflowStarted{});
+    return true;
+}
+
+void WebServer::abort_reflow() noexcept {
+    bus_.publish(ReflowAborted{});
 }
 
 }  // namespace reflowCtrl

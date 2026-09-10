@@ -313,4 +313,19 @@ esp_err_t register_profile_storage(httpd_handle_t server) {
     return ESP_OK;
 }
 
+bool load_active_profile_for_execution(ProfileConfiguration& profile,
+                                       std::optional<OvenCapabilities>& oven) {
+    const ProfileCollection profiles = service.snapshot();
+    const auto slot = std::find_if(
+        profiles.profiles.begin(), profiles.profiles.end(), [&](const auto& candidate) {
+            return candidate.id == profiles.active_profile_id && candidate.occupied;
+        });
+    if (slot == profiles.profiles.end()) {
+        return false;
+    }
+    oven = capabilities();
+    profile = with_maximum_oven_rates(slot->configuration, oven);
+    return true;
+}
+
 }  // namespace reflowCtrl
