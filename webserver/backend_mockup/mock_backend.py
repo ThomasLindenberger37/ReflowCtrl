@@ -122,23 +122,19 @@ class ReflowProfile(BaseModel):
         ) / self.soak.duration_s
         if soak_rate > self.max_ramp_rate_c_per_s:
             raise ValueError("Soak heating rate exceeds the maximum ramp rate")
-        minimum_peak_time = (
-            self.reflow.peak_temperature_c - self.reflow.liquidus_temperature_c
-        ) / self.max_ramp_rate_c_per_s
-        if self.reflow.time_above_liquidus_s <= minimum_peak_time:
+        peak_delta = self.reflow.peak_temperature_c - self.reflow.liquidus_temperature_c
+        minimum_peak_time = peak_delta * (
+            (1 / self.max_ramp_rate_c_per_s) + (1 / self.cooling.max_cooling_rate_c_per_s)
+        )
+        if self.reflow.time_above_liquidus_s < minimum_peak_time:
             raise ValueError(
-                "Time above liquidus is too short for the configured peak and ramp rate"
+                "Time above liquidus is too short for the configured heating and cooling rates"
             )
         return self
 
 
 class ActiveProfileSelection(BaseModel):
     id: str = Field(min_length=1, max_length=32)
-
-
-class ProfileUpdate(BaseModel):
-    original_name: str = Field(min_length=1, max_length=64)
-    profile: ReflowProfile
 
 
 class OvenController:
@@ -362,52 +358,169 @@ async def update_config(new_config: Config):
 @app.get("/api/profiles")
 async def get_profiles():
     return {
-        "active_profile": active_profile_name,
-        "profiles": [profile.model_dump() for profile in profiles.values()],
+        "version": 1,
+        "active_profile_id": active_profile_id,
+        "profiles": [
+            {**slot, "configuration": slot["configuration"].model_dump()} for slot in profile_slots
+        ],
     }
 
 
 @app.put("/api/profiles/active")
 async def select_active_profile(selection: ActiveProfileSelection):
-    global active_profile_name
+    global active_profile_id
     if oven.running:
         raise HTTPException(status_code=409, detail="Profile cannot be changed during reflow")
-    if selection.name not in profiles:
+    slot = next((item for item in profile_slots if item["id"] == selection.id), None)
+    if not slot or not slot["occupied"]:
         raise HTTPException(status_code=404, detail="Profile not found")
-    active_profile_name = selection.name
-    debug_print(f"PROFILE: Active profile set to {active_profile_name}")
-    return {"active_profile": active_profile_name}
+    active_profile_id = selection.id
+    debug_print(f"PROFILE: Active profile set to {active_profile_id}")
+    return {"selected": True}
 
 
-@app.put("/api/profile", response_model=ReflowProfile)
-async def update_profile(update: ProfileUpdate):
-    global active_profile_name
-    profile_name = update.original_name
-    profile = update.profile
-    if profile_name not in profiles:
+def find_profile_slot(profile_id: str) -> dict:
+    slot = next((item for item in profile_slots if item["id"] == profile_id), None)
+    if not slot:
         raise HTTPException(status_code=404, detail="Profile not found")
-    if oven.running and profile_name == active_profile_name:
-        raise HTTPException(status_code=409, detail="Active profile cannot be edited during reflow")
-    if profile.name != profile_name and profile.name in profiles:
-        raise HTTPException(status_code=409, detail="A profile with this name already exists")
-
-    del profiles[profile_name]
-    profiles[profile.name] = profile
-    if active_profile_name == profile_name:
-        active_profile_name = profile.name
-    debug_print(f"PROFILE: {profile_name} saved as {profile.name}")
-    return profile
+    return slot
 
 
-@app.post("/api/profile", response_model=ReflowProfile, status_code=201)
-async def create_profile(profile: ReflowProfile):
-    if len(profiles) >= 10:
-        raise HTTPException(status_code=409, detail="At most 10 profiles are allowed")
-    if profile.name in profiles:
-        raise HTTPException(status_code=409, detail="A profile with this name already exists")
-    profiles[profile.name] = profile
-    debug_print(f"PROFILE: {profile.name} created")
-    return profile
+def profile_preview(profile: ReflowProfile) -> dict:
+    ambient = 25.0
+    points = [{"time_s": 0.0, "temperature_c": ambient, "phase": "ramp-up"}]
+    time_value = 0.0
+
+    ramp_up_duration = (profile.soak.start_temperature_c - ambient) / profile.max_ramp_rate_c_per_s
+    ramp_to_reflow_duration = (
+        profile.reflow.liquidus_temperature_c - profile.soak.end_temperature_c
+    ) / profile.max_ramp_rate_c_per_s
+    peak_delta = profile.reflow.peak_temperature_c - profile.reflow.liquidus_temperature_c
+    minimum_peak_ascent = peak_delta / profile.max_ramp_rate_c_per_s
+    minimum_peak_descent = peak_delta / profile.cooling.max_cooling_rate_c_per_s
+    spare_time = profile.reflow.time_above_liquidus_s - minimum_peak_ascent - minimum_peak_descent
+    peak_ascent_duration = minimum_peak_ascent + spare_time / 2
+    peak_descent_duration = minimum_peak_descent + spare_time / 2
+    cooling_duration = (
+        profile.reflow.liquidus_temperature_c - ambient
+    ) / profile.cooling.max_cooling_rate_c_per_s
+    total_duration = (
+        ramp_up_duration
+        + profile.soak.duration_s
+        + ramp_to_reflow_duration
+        + peak_ascent_duration
+        + peak_descent_duration
+        + cooling_duration
+    )
+    sample_period = max(1.0, total_duration / (160 - 1 - 6))
+
+    def segment(start: float, end: float, duration: float, phase: str) -> None:
+        nonlocal time_value
+        segment_start = time_value
+        sample_count = max(1, math.ceil(duration / sample_period))
+        for sample in range(1, sample_count + 1):
+            progress = sample / sample_count
+            time_value = segment_start + duration * progress
+            points.append(
+                {
+                    "time_s": time_value,
+                    "temperature_c": start + (end - start) * progress,
+                    "phase": phase,
+                }
+            )
+
+    segment(
+        ambient,
+        profile.soak.start_temperature_c,
+        ramp_up_duration,
+        "ramp-up",
+    )
+    segment(
+        profile.soak.start_temperature_c,
+        profile.soak.end_temperature_c,
+        profile.soak.duration_s,
+        "soak",
+    )
+    segment(
+        profile.soak.end_temperature_c,
+        profile.reflow.liquidus_temperature_c,
+        ramp_to_reflow_duration,
+        "ramp-to-reflow",
+    )
+    segment(
+        profile.reflow.liquidus_temperature_c,
+        profile.reflow.peak_temperature_c,
+        peak_ascent_duration,
+        "above-liquidus",
+    )
+    segment(
+        profile.reflow.peak_temperature_c,
+        profile.reflow.liquidus_temperature_c,
+        peak_descent_duration,
+        "peak-and-descent",
+    )
+    segment(
+        profile.reflow.liquidus_temperature_c,
+        ambient,
+        cooling_duration,
+        "cooling",
+    )
+    return {
+        "valid": True,
+        "warnings": [],
+        "errors": [],
+        "summary": {
+            "duration_s": time_value,
+            "peak_temperature_c": profile.reflow.peak_temperature_c,
+            "time_above_liquidus_s": profile.reflow.time_above_liquidus_s,
+            "max_ramp_rate_c_per_s": profile.max_ramp_rate_c_per_s,
+        },
+        "points": points,
+    }
+
+
+@app.post("/api/profiles/preview")
+async def preview_profile(profile: ReflowProfile):
+    return profile_preview(profile)
+
+
+@app.get("/api/profiles/{profile_id}")
+async def get_profile(profile_id: str):
+    slot = find_profile_slot(profile_id)
+    return {**slot, "configuration": slot["configuration"].model_dump()}
+
+
+@app.put("/api/profiles/{profile_id}")
+async def update_profile(profile_id: str, profile: ReflowProfile):
+    slot = find_profile_slot(profile_id)
+    slot["configuration"] = profile
+    slot["occupied"] = True
+    return {**slot, "configuration": profile.model_dump()}
+
+
+@app.post("/api/profiles/{profile_id}/reset")
+async def reset_profile(profile_id: str):
+    slot = find_profile_slot(profile_id)
+    if slot["type"] == "builtin":
+        slot["configuration"] = profile_defaults[profile_id].model_copy(deep=True)
+        slot["occupied"] = True
+    else:
+        number = int(profile_id.removeprefix("custom-"))
+        slot["configuration"] = custom_template.model_copy(update={"name": f"Custom {number}"})
+        slot["occupied"] = False
+    return {**slot, "configuration": slot["configuration"].model_dump()}
+
+
+@app.delete("/api/profiles/{profile_id}")
+async def clear_profile(profile_id: str):
+    global active_profile_id
+    slot = find_profile_slot(profile_id)
+    if slot["type"] != "custom":
+        raise HTTPException(status_code=405, detail="Built-in profiles cannot be deleted")
+    await reset_profile(profile_id)
+    if active_profile_id == profile_id:
+        active_profile_id = "builtin-hxp602"
+    return {"cleared": True}
 
 
 @app.get("/api/logs")

@@ -232,8 +232,10 @@ esp_err_t preview_profile(httpd_req_t* request) {
     if (!profile) {
         return error_response(request, "400 Bad Request", "Invalid profile document");
     }
+    const auto oven = capabilities();
+    const ProfileConfiguration effective_profile = with_maximum_oven_rates(*profile, oven);
     return json_response(
-        request, serialize_profile_preview(generate_profile_preview(*profile, capabilities())));
+        request, serialize_profile_preview(generate_profile_preview(effective_profile, oven)));
 }
 
 esp_err_t put_profile(httpd_req_t* request) {
@@ -254,12 +256,14 @@ esp_err_t put_profile(httpd_req_t* request) {
     if (!profile) {
         return error_response(request, "400 Bad Request", "Invalid profile document");
     }
-    const auto preview = generate_profile_preview(*profile, capabilities());
+    const auto oven = capabilities();
+    const ProfileConfiguration effective_profile = with_maximum_oven_rates(*profile, oven);
+    const auto preview = generate_profile_preview(effective_profile, oven);
     if (!preview.valid) {
         return json_response(request, serialize_profile_preview(preview),
                              "422 Unprocessable Entity");
     }
-    const esp_err_t result = service.save(path_id(request), *profile);
+    const esp_err_t result = service.save(path_id(request), effective_profile);
     if (result != ESP_OK) {
         return error_response(
             request, result == ESP_ERR_NOT_FOUND ? "404 Not Found" : "500 Internal Server Error",

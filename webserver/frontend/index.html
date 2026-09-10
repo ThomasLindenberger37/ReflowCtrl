@@ -13,6 +13,7 @@
     href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap"
     rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
+  <script src="/chart.umd.min.js?v=4.5.1" defer></script>
   <script src="/characterization-analyzer.js?v=embedded-api-1" defer></script>
   <script src="/app.js?v=embedded-api-1" defer></script>
 </head>
@@ -265,14 +266,10 @@
 
             <section class="parameter-group">
               <div class="parameter-heading"><span>01</span>
-                <div><strong>Heating</strong><small>Controls how quickly the oven may heat.</small></div>
+                <div><strong>Heating</strong><small>Uses the maximum characterized oven rate automatically.</small></div>
               </div>
-              <div class="profile-field" data-profile-field="max_ramp_rate_c_per_s" data-highlight="ramp">
-                <label for="profileRampRate">Maximum heating rate</label>
-                <div class="unit-input"><input id="profileRampRate" type="number" min="0.1" max="20" step="0.1"
-                    inputmode="decimal"><span>°C/s</span></div>
-                <span class="field-error" data-error-for="max_ramp_rate_c_per_s"></span>
-              </div>
+              <input id="profileRampRate" type="hidden">
+              <p class="field-help">The controller selects the fastest available heating rate for the requested temperature.</p>
             </section>
 
             <section class="parameter-group">
@@ -327,14 +324,10 @@
 
             <section class="parameter-group">
               <div class="parameter-heading"><span>04</span>
-                <div><strong>Cooling</strong><small>Limits thermal stress during cooldown.</small></div>
+                <div><strong>Cooling</strong><small>Uses the maximum characterized cooling rate automatically.</small></div>
               </div>
-              <div class="profile-field" data-profile-field="cooling.max_cooling_rate_c_per_s">
-                <label for="profileCoolingRate">Maximum cooling rate</label>
-                <div class="unit-input"><input id="profileCoolingRate" type="number" min="0.1" max="20" step="0.1"
-                    inputmode="decimal"><span>°C/s</span></div>
-                <span class="field-error" data-error-for="cooling.max_cooling_rate_c_per_s"></span>
-              </div>
+              <input id="profileCoolingRate" type="hidden">
+              <p class="field-help">The controller selects the fastest available cooling rate at liquidus.</p>
             </section>
           </div>
 

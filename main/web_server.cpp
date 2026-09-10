@@ -14,6 +14,7 @@
 #include "esp_log.h"
 #include "esp_log_write.h"
 #include "esp_netif.h"
+#include "esp_timer.h"
 #include "ipv4_address.hpp"
 #include "log_buffer.hpp"
 #include "mdns.h"
@@ -23,6 +24,8 @@ extern const char index_html_start[] asm("_binary_index_html_start");
 extern const char index_html_end[] asm("_binary_index_html_end");
 extern const char style_css_start[] asm("_binary_style_css_start");
 extern const char style_css_end[] asm("_binary_style_css_end");
+extern const char chart_umd_min_js_start[] asm("_binary_chart_umd_min_js_start");
+extern const char chart_umd_min_js_end[] asm("_binary_chart_umd_min_js_end");
 extern const char app_js_start[] asm("_binary_app_js_start");
 extern const char app_js_end[] asm("_binary_app_js_end");
 extern const char characterization_analyzer_js_start[] asm(
@@ -38,6 +41,11 @@ constexpr char HOSTNAME[] = "reflow-ctrl";
 constexpr uint16_t HTTP_PORT = 80;
 constexpr std::size_t SERVER_ADDRESS_SIZE = 16;
 constexpr std::size_t LOG_FORMAT_BUFFER_SIZE = 256;
+constexpr std::int64_t HEALTH_CHECK_INTERVAL_US = 5'000'000;
+constexpr std::int64_t MDNS_ANNOUNCEMENT_INTERVAL_US = 30'000'000;
+constexpr std::int64_t RESTART_COOLDOWN_US = 60'000'000;
+constexpr std::uint8_t FAILED_HEALTH_PROBES_BEFORE_RESTART = 6;
+constexpr std::uint8_t FAILED_MDNS_ANNOUNCEMENTS_BEFORE_RESTART = 3;
 LogBuffer log_buffer;
 vprintf_like_t uart_vprintf = nullptr;
 
@@ -257,33 +265,61 @@ esp_err_t send_characterization_preview(httpd_req_t* request) {
 
 esp_err_t WebServer::start() {
     uart_vprintf = esp_log_set_vprintf(&capture_log);
-    ESP_RETURN_ON_ERROR(mdns_init(), TAG, "Failed to initialize mDNS");
-    ESP_RETURN_ON_ERROR(mdns_hostname_set(HOSTNAME), TAG, "Failed to set mDNS hostname");
-    ESP_RETURN_ON_ERROR(mdns_instance_name_set("ReflowCtrl"), TAG,
-                        "Failed to set mDNS instance name");
-    ESP_RETURN_ON_ERROR(mdns_service_add("ReflowCtrl", "_http", "_tcp", HTTP_PORT, nullptr, 0), TAG,
-                        "Failed to advertise HTTP service");
     ESP_RETURN_ON_ERROR(
         esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &handle_ip_event, nullptr), TAG,
         "Failed to register mDNS reconnect handler");
+    ESP_RETURN_ON_ERROR(start_services(), TAG, "Failed to start network services");
 
-    esp_netif_t* station_interface = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-    if (station_interface == nullptr) {
-        return ESP_ERR_NOT_FOUND;
+    const std::int64_t now = esp_timer_get_time();
+    next_health_check_us_ = now + HEALTH_CHECK_INTERVAL_US;
+    next_mdns_announcement_us_ = now + MDNS_ANNOUNCEMENT_INTERVAL_US;
+    return ESP_OK;
+}
+
+esp_err_t WebServer::start_mdns() noexcept {
+    const esp_err_t init_result = mdns_init();
+    if (init_result != ESP_OK) {
+        return init_result;
     }
-    ESP_RETURN_ON_ERROR(announce_mdns(station_interface), TAG,
-                        "Failed to announce mDNS on station interface");
+    mdns_started_ = true;
 
+    esp_err_t result = mdns_hostname_set(HOSTNAME);
+    if (result == ESP_OK) {
+        result = mdns_instance_name_set("ReflowCtrl");
+    }
+    if (result == ESP_OK) {
+        result = mdns_service_add("ReflowCtrl", "_http", "_tcp", HTTP_PORT, nullptr, 0);
+    }
+    esp_netif_t* station_interface = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (result == ESP_OK && station_interface == nullptr) {
+        result = ESP_ERR_NOT_FOUND;
+    }
+    if (result == ESP_OK) {
+        result = announce_mdns(station_interface);
+    }
+    if (result != ESP_OK) {
+        mdns_free();
+        mdns_started_ = false;
+    }
+    return result;
+}
+
+esp_err_t WebServer::start_http_server() noexcept {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = HTTP_PORT;
-    config.stack_size = 6144;
+    config.stack_size = 8192;
     config.max_uri_handlers = 21;
     config.uri_match_fn = httpd_uri_match_wildcard;
-    httpd_handle_t server = nullptr;
-    ESP_RETURN_ON_ERROR(httpd_start(&server, &config), TAG, "Failed to start HTTP server");
+    esp_err_t result = httpd_start(&server_, &config);
+    if (result != ESP_OK) {
+        server_ = nullptr;
+        return result;
+    }
 
     static WebAsset index_asset{index_html_start, index_html_end, "text/html"};
     static WebAsset style_asset{style_css_start, style_css_end, "text/css"};
+    static WebAsset chart_asset{chart_umd_min_js_start, chart_umd_min_js_end,
+                                "application/javascript"};
     static WebAsset app_asset{app_js_start, app_js_end, "application/javascript"};
     static WebAsset analyzer_asset{characterization_analyzer_js_start,
                                    characterization_analyzer_js_end, "application/javascript"};
@@ -291,6 +327,7 @@ esp_err_t WebServer::start() {
         httpd_uri_t{"/", HTTP_GET, &send_asset, &index_asset},
         httpd_uri_t{"/index.html", HTTP_GET, &send_asset, &index_asset},
         httpd_uri_t{"/style.css", HTTP_GET, &send_asset, &style_asset},
+        httpd_uri_t{"/chart.umd.min.js", HTTP_GET, &send_asset, &chart_asset},
         httpd_uri_t{"/app.js", HTTP_GET, &send_asset, &app_asset},
         httpd_uri_t{"/characterization-analyzer.js", HTTP_GET, &send_asset, &analyzer_asset},
         httpd_uri_t{"/api/status", HTTP_GET, &send_status, this},
@@ -304,17 +341,125 @@ esp_err_t WebServer::start() {
     };
 
     for (const httpd_uri_t& endpoint : endpoints) {
-        ESP_RETURN_ON_ERROR(httpd_register_uri_handler(server, &endpoint), TAG,
-                            "Failed to register %s", endpoint.uri);
+        result = httpd_register_uri_handler(server_, &endpoint);
+        if (result != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to register %s: %s", endpoint.uri, esp_err_to_name(result));
+            break;
+        }
     }
-
-    ESP_RETURN_ON_ERROR(register_characterization_storage(server), TAG,
-                        "Failed to register characterization storage");
-    ESP_RETURN_ON_ERROR(register_profile_storage(server), TAG,
-                        "Failed to register profile storage");
+    if (result == ESP_OK) {
+        result = register_characterization_storage(server_);
+    }
+    if (result == ESP_OK) {
+        result = register_profile_storage(server_);
+    }
+    if (result != ESP_OK) {
+        httpd_stop(server_);
+        server_ = nullptr;
+        return result;
+    }
 
     ESP_LOGI(TAG, "Listening at http://%s.local", HOSTNAME);
     return ESP_OK;
+}
+
+esp_err_t WebServer::start_services() noexcept {
+    ESP_RETURN_ON_ERROR(start_mdns(), TAG, "Failed to initialize mDNS");
+    const esp_err_t result = start_http_server();
+    if (result != ESP_OK) {
+        mdns_free();
+        mdns_started_ = false;
+    }
+    return result;
+}
+
+void WebServer::acknowledge_health_probe(void* context) noexcept {
+    auto* web_server = static_cast<WebServer*>(context);
+    web_server->health_probe_acknowledgements_.fetch_add(1, std::memory_order_relaxed);
+}
+
+void WebServer::restart_services() noexcept {
+    const std::int64_t now = esp_timer_get_time();
+    if (now < restart_not_before_us_) {
+        return;
+    }
+    restart_not_before_us_ = now + RESTART_COOLDOWN_US;
+    ESP_LOGE(TAG, "HTTP or mDNS became unresponsive; restarting both services");
+    if (server_ != nullptr) {
+        const esp_err_t stop_result = httpd_stop(server_);
+        if (stop_result != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to stop HTTP server cleanly: %s", esp_err_to_name(stop_result));
+        }
+        server_ = nullptr;
+    }
+    if (mdns_started_) {
+        mdns_free();
+        mdns_started_ = false;
+    }
+
+    const esp_err_t result = start_services();
+    if (result != ESP_OK) {
+        ESP_LOGE(TAG, "Network service restart failed: %s; retrying later",
+                 esp_err_to_name(result));
+    } else {
+        ESP_LOGI(TAG, "HTTP and mDNS services restarted");
+    }
+    pending_health_probe_ = 0;
+    failed_health_probes_ = 0;
+    failed_mdns_announcements_ = 0;
+}
+
+void WebServer::tick() noexcept {
+    const std::int64_t now = esp_timer_get_time();
+    if (now >= next_mdns_announcement_us_) {
+        next_mdns_announcement_us_ = now + MDNS_ANNOUNCEMENT_INTERVAL_US;
+        esp_netif_t* station_interface = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+        if (!mdns_started_ || station_interface == nullptr
+            || announce_mdns(station_interface) != ESP_OK) {
+            ++failed_mdns_announcements_;
+            if (failed_mdns_announcements_ >= FAILED_MDNS_ANNOUNCEMENTS_BEFORE_RESTART) {
+                restart_services();
+                return;
+            }
+        } else {
+            failed_mdns_announcements_ = 0;
+        }
+    }
+    if (now < next_health_check_us_) {
+        return;
+    }
+    next_health_check_us_ = now + HEALTH_CHECK_INTERVAL_US;
+
+    bool health_probe_pending = false;
+    if (pending_health_probe_ != 0) {
+        health_probe_pending =
+            health_probe_acknowledgements_.load(std::memory_order_relaxed) < pending_health_probe_;
+        if (health_probe_pending) {
+            ++failed_health_probes_;
+        } else {
+            failed_health_probes_ = 0;
+        }
+    }
+    if (failed_health_probes_ >= FAILED_HEALTH_PROBES_BEFORE_RESTART) {
+        restart_services();
+        return;
+    }
+    if (server_ == nullptr) {
+        restart_services();
+        return;
+    }
+    if (health_probe_pending) {
+        return;
+    }
+
+    pending_health_probe_ = health_probe_acknowledgements_.load(std::memory_order_relaxed) + 1;
+    if (httpd_queue_work(server_, &WebServer::acknowledge_health_probe, this) != ESP_OK) {
+        ++failed_health_probes_;
+        pending_health_probe_ = 0;
+        if (failed_health_probes_ >= FAILED_HEALTH_PROBES_BEFORE_RESTART) {
+            restart_services();
+        }
+    }
 }
 
 void WebServer::start_characterization() noexcept {

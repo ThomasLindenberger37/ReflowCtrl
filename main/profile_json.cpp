@@ -1,5 +1,6 @@
 #include "profile_json.hpp"
 
+#include <cstdio>
 #include <cstring>
 #include <memory>
 
@@ -95,6 +96,70 @@ void add_rate_curve(std::vector<CharacterizationRatePoint>& target, const cJSON*
     }
 }
 
+void append_json_string(std::string& output, std::string_view value) {
+    constexpr char HEX_DIGITS[] = "0123456789abcdef";
+    output.push_back('"');
+    for (const unsigned char character : value) {
+        switch (character) {
+            case '"':
+                output.append("\\\"");
+                break;
+            case '\\':
+                output.append("\\\\");
+                break;
+            case '\b':
+                output.append("\\b");
+                break;
+            case '\f':
+                output.append("\\f");
+                break;
+            case '\n':
+                output.append("\\n");
+                break;
+            case '\r':
+                output.append("\\r");
+                break;
+            case '\t':
+                output.append("\\t");
+                break;
+            default:
+                if (character < 0x20) {
+                    output.append("\\u00");
+                    output.push_back(HEX_DIGITS[character >> 4]);
+                    output.push_back(HEX_DIGITS[character & 0x0f]);
+                } else {
+                    output.push_back(static_cast<char>(character));
+                }
+        }
+    }
+    output.push_back('"');
+}
+
+void append_json_number(std::string& output, double value) {
+    char number[32]{};
+    const int length = std::snprintf(number, sizeof(number), "%.6g", value);
+    if (length > 0) {
+        output.append(number, static_cast<std::size_t>(length));
+    }
+}
+
+void append_issues(std::string& output, const ProfilePreview& preview,
+                   ValidationSeverity severity) {
+    bool first = true;
+    for (const auto& issue : preview.issues) {
+        if (issue.severity != severity) {
+            continue;
+        }
+        output.append(first ? "{" : ",{");
+        output.append("\"field\":");
+        append_json_string(output, issue.field);
+        output.append(",\"message\":");
+        append_json_string(output, issue.message);
+        output.push_back('}');
+        first = false;
+    }
+}
+
 }  // namespace
 
 std::optional<ProfileConfiguration> parse_profile(const std::string_view json) {
@@ -133,7 +198,7 @@ std::optional<ProfileCollection> parse_profile_collection(const std::string_view
         }
         slot.configuration = *configuration;
     }
-    const auto defaults = default_profile_collection();
+    static const ProfileCollection defaults = default_profile_collection();
     for (std::size_t index = 0; index < result.profiles.size(); ++index) {
         if (result.profiles[index].id != defaults.profiles[index].id
             || result.profiles[index].type != defaults.profiles[index].type
@@ -160,30 +225,34 @@ std::string serialize_profile_collection(const ProfileCollection& profiles) {
 }
 
 std::string serialize_profile_preview(const ProfilePreview& preview) {
-    cJSON* root = cJSON_CreateObject();
-    cJSON_AddBoolToObject(root, "valid", preview.valid);
-    cJSON* warnings = cJSON_AddArrayToObject(root, "warnings");
-    cJSON* errors = cJSON_AddArrayToObject(root, "errors");
-    for (const auto& issue : preview.issues) {
-        cJSON* item = cJSON_CreateObject();
-        cJSON_AddStringToObject(item, "field", issue.field.c_str());
-        cJSON_AddStringToObject(item, "message", issue.message.c_str());
-        cJSON_AddItemToArray(issue.severity == ValidationSeverity::Error ? errors : warnings, item);
+    std::string output;
+    output.reserve(512 + preview.points.size() * 64);
+    output.append(preview.valid ? "{\"valid\":true,\"warnings\":["
+                                : "{\"valid\":false,\"warnings\":[");
+    append_issues(output, preview, ValidationSeverity::Warning);
+    output.append("],\"errors\":[");
+    append_issues(output, preview, ValidationSeverity::Error);
+    output.append("],\"summary\":{\"duration_s\":");
+    append_json_number(output, preview.duration_s);
+    output.append(",\"peak_temperature_c\":");
+    append_json_number(output, preview.peak_temperature_c);
+    output.append(",\"time_above_liquidus_s\":");
+    append_json_number(output, preview.time_above_liquidus_s);
+    output.append(",\"max_ramp_rate_c_per_s\":");
+    append_json_number(output, preview.max_ramp_rate_c_per_s);
+    output.append("},\"points\":[");
+    for (std::size_t index = 0; index < preview.points.size(); ++index) {
+        const auto& point = preview.points[index];
+        output.append(index == 0 ? "{\"time_s\":" : ",{\"time_s\":");
+        append_json_number(output, point.time_s);
+        output.append(",\"temperature_c\":");
+        append_json_number(output, point.temperature_c);
+        output.append(",\"phase\":");
+        append_json_string(output, point.phase);
+        output.push_back('}');
     }
-    cJSON* summary = cJSON_AddObjectToObject(root, "summary");
-    cJSON_AddNumberToObject(summary, "duration_s", preview.duration_s);
-    cJSON_AddNumberToObject(summary, "peak_temperature_c", preview.peak_temperature_c);
-    cJSON_AddNumberToObject(summary, "time_above_liquidus_s", preview.time_above_liquidus_s);
-    cJSON_AddNumberToObject(summary, "max_ramp_rate_c_per_s", preview.max_ramp_rate_c_per_s);
-    cJSON* points = cJSON_AddArrayToObject(root, "points");
-    for (const auto& point : preview.points) {
-        cJSON* item = cJSON_CreateObject();
-        cJSON_AddNumberToObject(item, "time_s", point.time_s);
-        cJSON_AddNumberToObject(item, "temperature_c", point.temperature_c);
-        cJSON_AddStringToObject(item, "phase", point.phase.c_str());
-        cJSON_AddItemToArray(points, item);
-    }
-    return print_json(root);
+    output.append("]}");
+    return output;
 }
 
 std::optional<OvenCapabilities> parse_oven_capabilities(const std::string_view json) {

@@ -28,6 +28,8 @@ let activeProfileId = "";
 let editedProfileId = "";
 let activeProfileHighlight = null;
 let profilePreviewRequest = 0;
+let profilePreviewTimer;
+let profilePreviewAbortController;
 const availableProfiles = new Map();
 
 async function apiRequest(path, options = {}) {
@@ -481,7 +483,7 @@ const profileUi = {
 };
 
 const profileHighlightHelp = {
-  ramp: "The highlighted ramps are limited by the maximum heating rate.",
+  ramp: "The controller automatically uses the maximum characterized heating rate.",
   "soak-start": "Soak starts here, after the initial controlled heating ramp.",
   "soak-end": "Soak ends here before the temperature rises toward liquidus.",
   "soak-duration": "This highlighted interval is the complete linear soak phase.",
@@ -652,9 +654,9 @@ function highlightData(curve, metadata, config, highlight) {
   return { line: [], points: pointMap[highlight] ? [pointMap[highlight]] : [] };
 }
 
-async function requestProfilePreview(requestNumber, config) {
+async function requestProfilePreview(requestNumber, config, signal) {
   try {
-    const preview = await apiRequest("/profiles/preview", { method: "POST", body: JSON.stringify(config) });
+    const preview = await apiRequest("/profiles/preview", { method: "POST", body: JSON.stringify(config), signal });
     if (requestNumber !== profilePreviewRequest) return;
     const errors = Object.fromEntries(preview.errors.map(issue => [issue.field, issue.message]));
     document.querySelectorAll("[data-error-for]").forEach(element => { element.textContent = errors[element.dataset.errorFor] ?? ""; });
@@ -679,6 +681,7 @@ async function requestProfilePreview(requestNumber, config) {
     profileUi.previewTal.textContent = preview.valid ? `${preview.summary.time_above_liquidus_s} s` : "—";
     profileUi.previewPeak.textContent = preview.valid ? `${preview.summary.peak_temperature_c} °C` : "—";
   } catch (error) {
+    if (error.name === "AbortError") return;
     if (requestNumber !== profilePreviewRequest) return;
     profileUi.save.disabled = true;
     profileUi.status.textContent = error.message;
@@ -693,13 +696,17 @@ function renderProfileEditor() {
   profileUi.status.textContent = "Validating …";
   profileUi.explanation.textContent = activeProfileHighlight ? profileHighlightHelp[activeProfileHighlight] : "Focus or point at a parameter to see which part of the curve it controls.";
   const requestNumber = ++profilePreviewRequest;
-  setTimeout(() => requestProfilePreview(requestNumber, config), 180);
+  clearTimeout(profilePreviewTimer);
+  profilePreviewAbortController?.abort();
+  profilePreviewAbortController = new AbortController();
+  const signal = profilePreviewAbortController.signal;
+  profilePreviewTimer = setTimeout(() => requestProfilePreview(requestNumber, config, signal), 250);
 }
 
 function setProfileHighlight(highlight) {
   activeProfileHighlight = highlight;
   document.querySelectorAll(".profile-field").forEach(field => field.classList.toggle("is-active", field.dataset.highlight === highlight));
-  renderProfileEditor();
+  profileUi.explanation.textContent = highlight ? profileHighlightHelp[highlight] : "Focus or point at a parameter to see which part of the curve it controls.";
 }
 
 function openProfileEditor() {
@@ -717,6 +724,8 @@ function openProfileEditor() {
 }
 
 function closeProfileEditor() {
+  clearTimeout(profilePreviewTimer);
+  profilePreviewAbortController?.abort();
   profileUi.backdrop.hidden = true;
   document.body.classList.remove("modal-open");
   setProfileHighlight(null);

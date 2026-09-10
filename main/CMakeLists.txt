@@ -25,6 +25,7 @@ idf_component_register(
     EMBED_TXTFILES
         "../webserver/frontend/index.html"
         "../webserver/frontend/style.css"
+        "../webserver/frontend/chart.umd.min.js"
         "../webserver/frontend/app.js"
         "../webserver/frontend/characterization-analyzer.js"
     REQUIRES

@@ -5,12 +5,14 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace reflowCtrl {
 
 enum class ProfileType : std::uint8_t { BuiltIn, Custom };
 enum class ValidationSeverity : std::uint8_t { Warning, Error };
+enum class ProfileMutationResult : std::uint8_t { Success, NotFound, NotAllowed };
 
 struct ProfileConfiguration {
     std::string name;
@@ -73,6 +75,14 @@ struct ProfilePreview {
 };
 
 [[nodiscard]] ProfileCollection default_profile_collection();
+[[nodiscard]] ProfileMutationResult save_profile(ProfileCollection& profiles, std::string_view id,
+                                                 const ProfileConfiguration& configuration);
+[[nodiscard]] ProfileMutationResult reset_profile(ProfileCollection& profiles, std::string_view id);
+[[nodiscard]] ProfileMutationResult clear_profile(ProfileCollection& profiles, std::string_view id);
+[[nodiscard]] ProfileMutationResult select_profile(ProfileCollection& profiles,
+                                                   std::string_view id);
+[[nodiscard]] ProfileConfiguration with_maximum_oven_rates(
+    const ProfileConfiguration& profile, const std::optional<OvenCapabilities>& oven);
 [[nodiscard]] std::vector<ValidationIssue> validate_profile(
     const ProfileConfiguration& profile, const std::optional<OvenCapabilities>& oven);
 [[nodiscard]] ProfilePreview generate_profile_preview(const ProfileConfiguration& profile,

@@ -7,8 +7,7 @@ Checks: >
   portability-*,
   -bugprone-easily-swappable-parameters
 WarningsAsErrors: ''
-HeaderFilterRegex: '.*'
-ExcludeHeaderFilterRegex: '^/opt/esp-idf/'
+HeaderFilterRegex: '.*/(main|tests)/.*'
 SystemHeaders: false
 FormatStyle: file
 ...

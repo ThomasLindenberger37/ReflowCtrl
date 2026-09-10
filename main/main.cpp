@@ -69,6 +69,7 @@ extern "C" void app_main() {
     while (true) {
         status_led.tick(10);
         button.tick();
+        web_server.tick();
         vTaskDelay(UPDATE_PERIOD);
     }
 }

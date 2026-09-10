@@ -496,7 +496,6 @@ GET /
 GET /index.html
 GET /style.css
 GET /app.js
-GET /reflow-profile.js
 ```
 
 These are not API endpoints and return static files rather than JSON.

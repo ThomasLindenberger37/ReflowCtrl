@@ -80,7 +80,10 @@ esp_err_t start_wifi_station(MessageBus& bus) {
     ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_STA), TAG, "Failed to set station mode");
     ESP_RETURN_ON_ERROR(esp_wifi_set_config(WIFI_IF_STA, &wifi_config), TAG,
                         "Failed to configure station");
-    return esp_wifi_start();
+    ESP_RETURN_ON_ERROR(esp_wifi_start(), TAG, "Failed to start Wi-Fi");
+    ESP_RETURN_ON_ERROR(esp_wifi_set_ps(WIFI_PS_NONE), TAG, "Failed to disable Wi-Fi power saving");
+    ESP_LOGI(TAG, "Wi-Fi power saving disabled for reliable local discovery");
+    return ESP_OK;
 }
 
 bool is_wifi_connected() {

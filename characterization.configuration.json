@@ -1,0 +1,129 @@
+{
+  "formatVersion": 1,
+  "type": "oven-characterization",
+  "ambientTemperatureC": 26.32,
+  "heatingRate": [
+    {
+      "temperatureC": 37.5,
+      "rateCPerSecond": 0.3512,
+      "sampleCount": 337
+    },
+    {
+      "temperatureC": 62.5,
+      "rateCPerSecond": 0.8862,
+      "sampleCount": 132
+    },
+    {
+      "temperatureC": 87.5,
+      "rateCPerSecond": 0.9425,
+      "sampleCount": 34
+    },
+    {
+      "temperatureC": 112.5,
+      "rateCPerSecond": 0.7119,
+      "sampleCount": 162
+    },
+    {
+      "temperatureC": 137.5,
+      "rateCPerSecond": 0.6746,
+      "sampleCount": 79
+    },
+    {
+      "temperatureC": 162.5,
+      "rateCPerSecond": 0.5313,
+      "sampleCount": 100
+    },
+    {
+      "temperatureC": 187.5,
+      "rateCPerSecond": 0.4267,
+      "sampleCount": 100
+    },
+    {
+      "temperatureC": 212.5,
+      "rateCPerSecond": 0.1734,
+      "sampleCount": 432
+    },
+    {
+      "temperatureC": 237.5,
+      "rateCPerSecond": 0.0984,
+      "sampleCount": 660
+    }
+  ],
+  "passiveCoolingRate": [
+    {
+      "temperatureC": 162.5,
+      "rateCPerSecond": -0.2519,
+      "sampleCount": 153
+    },
+    {
+      "temperatureC": 187.5,
+      "rateCPerSecond": -0.3236,
+      "sampleCount": 365
+    },
+    {
+      "temperatureC": 212.5,
+      "rateCPerSecond": -0.3309,
+      "sampleCount": 363
+    },
+    {
+      "temperatureC": 237.5,
+      "rateCPerSecond": -0.2541,
+      "sampleCount": 324
+    }
+  ],
+  "coastOvershoot": [
+    {
+      "phase": "coast_1",
+      "temperatureC": 80,
+      "overshootC": 19.06,
+      "timeToPeakSeconds": 19.8
+    },
+    {
+      "phase": "coast_2",
+      "temperatureC": 130.03,
+      "overshootC": 13.35,
+      "timeToPeakSeconds": 19.8
+    },
+    {
+      "phase": "coast_3",
+      "temperatureC": 181.41,
+      "overshootC": 10.55,
+      "timeToPeakSeconds": 18
+    },
+    {
+      "phase": "coast_4",
+      "temperatureC": 220.03,
+      "overshootC": 2.24,
+      "timeToPeakSeconds": 16
+    },
+    {
+      "phase": "cooldown",
+      "temperatureC": 240.02,
+      "overshootC": 1.54,
+      "timeToPeakSeconds": 22.2
+    }
+  ],
+  "estimatedEquilibriumTemperatureC": null,
+  "summary": {
+    "minimumTemperatureC": 24.95,
+    "maximumTemperatureC": 241.56,
+    "maximumHeatingRateCPerSecond": 0.9425,
+    "maximumObservedOvershootC": 19.06,
+    "totalDurationSeconds": 817.4
+  },
+  "dataQuality": {
+    "inputSamples": 4798,
+    "usedSamples": 3946,
+    "duplicateSamples": 852,
+    "timestampRegressions": 173,
+    "timestampRegressionsInput": 173,
+    "timestampRegressionsAfterCleanup": 0,
+    "largestGapMs": 27400,
+    "expectedIntervalMs": 200,
+    "warnings": [
+      "852 identical duplicate samples removed.",
+      "173 timestamp regressions detected in input.",
+      "Large sampling gap: 27.4 s."
+    ]
+  }
+}
