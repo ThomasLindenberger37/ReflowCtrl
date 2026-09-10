@@ -35,10 +35,13 @@ The complete request/response contract, validation rules, and `curl` examples ar
 - `GET /api/config` – read the network and MQTT configuration
 - `GET /api/setup/status` – let the backend report whether installation is required
 - `PUT /api/config` – update the in-memory configuration
-- `GET /api/profiles` – list compact reflow profiles and the active profile
-- `PUT /api/profiles/active` – select the active profile
-- `POST /api/profile` – create and persist a profile (maximum 10)
-- `PUT /api/profile` – validate and save a compact profile configuration
+- `GET /api/profiles` – list the two built-in and six custom profile slots
+- `GET /api/profiles/{id}` – read one profile slot
+- `PUT /api/profiles/{id}` – validate and persist a profile
+- `PUT /api/profiles/active` – persist the active profile ID
+- `POST /api/profiles/{id}/reset` – restore a slot to its factory state
+- `DELETE /api/profiles/{id}` – clear a custom slot
+- `POST /api/profiles/preview` – validate a profile and generate its target curve
 - `GET /api/logs?after=<id>` – read new lines from the debug terminal
 - `POST /api/characterize` – entry point for oven characterization
 
@@ -52,8 +55,8 @@ backend currently implements `GET /api/status` for the measured temperature and
 characterization configuration. In the characterization dialog, use **Load CSV / JSON**
 and **Save to controller** to retain the analyzed thermal behavior in ESP32 flash.
 The saved analysis is restored when the dialog opens, including after a controller
-restart. Raw CSV recordings remain browser-only. Process controls, profiles, and
-settings remain disabled until their firmware APIs exist. The legacy FastAPI mock
+restart. Raw CSV recordings remain browser-only. Profile management is available;
+process controls and settings remain disabled until their firmware APIs exist. The legacy FastAPI mock
 does not implement the embedded characterization API. The embedded status and terminal polling have no external
 web dependencies; the chart stays empty until Chart.js is bundled locally.
 
@@ -67,6 +70,8 @@ other imported Python code.
 
 ## Profile editor
 
-The profile editor stores only the compact profile parameters. The independent functions `validateProfile(config)` and `generateProfile(config)` live in `frontend/reflow-profile.js`; curve generation and the interactive preview run entirely in the browser. The generated one-second temperature curve is never sent to the backend.
+The profile editor stores only compact profile parameters. Validation and curve generation run in
+the ESP32 backend so the preview uses the same calculations as process control. Characterization
+data remains part of the oven configuration and is never copied into individual profiles.
 
 Characterization UI checks: `node --test tests/characterization_ui_test.js` (from the repository root).

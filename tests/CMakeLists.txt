@@ -61,3 +61,13 @@ target_compile_options(characterization_configuration_test PRIVATE -Wall -Wextra
 target_include_directories(characterization_configuration_test PRIVATE ../main)
 target_link_libraries(characterization_configuration_test PRIVATE characterization_json GTest::gtest_main)
 gtest_discover_tests(characterization_configuration_test)
+
+add_executable(profile_test
+    profile_test.cpp
+    ../main/profile.cpp
+    ../main/profile_json.cpp)
+target_compile_features(profile_test PRIVATE cxx_std_23)
+target_compile_options(profile_test PRIVATE -Wall -Wextra -Werror -pedantic)
+target_include_directories(profile_test PRIVATE ../main)
+target_link_libraries(profile_test PRIVATE characterization_json GTest::gtest_main)
+gtest_discover_tests(profile_test)

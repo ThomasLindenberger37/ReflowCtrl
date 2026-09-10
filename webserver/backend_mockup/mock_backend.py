@@ -94,11 +94,16 @@ class ReflowStageProfile(BaseModel):
     time_above_liquidus_s: float = Field(gt=0, le=600)
 
 
+class CoolingProfile(BaseModel):
+    max_cooling_rate_c_per_s: float = Field(gt=0, le=20)
+
+
 class ReflowProfile(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     max_ramp_rate_c_per_s: float = Field(gt=0, le=20)
     soak: SoakProfile
     reflow: ReflowStageProfile
+    cooling: CoolingProfile
 
     @model_validator(mode="after")
     def validate_temperature_order(self):
@@ -128,7 +133,7 @@ class ReflowProfile(BaseModel):
 
 
 class ActiveProfileSelection(BaseModel):
-    name: str = Field(min_length=1, max_length=64)
+    id: str = Field(min_length=1, max_length=32)
 
 
 class ProfileUpdate(BaseModel):
@@ -253,49 +258,52 @@ config = Config(
     mqtt_broker="192.168.1.20",
     mqtt_port=1883,
 )
-profiles: dict[str, ReflowProfile] = {
-    "HXP-602": ReflowProfile(
+profile_defaults: dict[str, ReflowProfile] = {
+    "builtin-hxp602": ReflowProfile(
         name="HXP-602",
         max_ramp_rate_c_per_s=2.0,
-        soak=SoakProfile(start_temperature_c=120, end_temperature_c=150, duration_s=90),
+        soak=SoakProfile(start_temperature_c=140, end_temperature_c=155, duration_s=90),
         reflow=ReflowStageProfile(
-            liquidus_temperature_c=173,
-            peak_temperature_c=195,
-            time_above_liquidus_s=45,
+            liquidus_temperature_c=165,
+            peak_temperature_c=180,
+            time_above_liquidus_s=40,
         ),
+        cooling=CoolingProfile(max_cooling_rate_c_per_s=3.0),
     ),
-    "SAC305": ReflowProfile(
-        name="SAC305",
+    "builtin-sac": ReflowProfile(
+        name="SAC Lead-Free",
         max_ramp_rate_c_per_s=2.0,
-        soak=SoakProfile(start_temperature_c=150, end_temperature_c=180, duration_s=90),
+        soak=SoakProfile(start_temperature_c=150, end_temperature_c=175, duration_s=100),
         reflow=ReflowStageProfile(
             liquidus_temperature_c=217,
-            peak_temperature_c=245,
-            time_above_liquidus_s=60,
-        ),
-    ),
-    "Custom 1": ReflowProfile(
-        name="Custom 1",
-        max_ramp_rate_c_per_s=1.8,
-        soak=SoakProfile(start_temperature_c=125, end_temperature_c=155, duration_s=100),
-        reflow=ReflowStageProfile(
-            liquidus_temperature_c=183,
-            peak_temperature_c=215,
-            time_above_liquidus_s=50,
-        ),
-    ),
-    "Custom 2": ReflowProfile(
-        name="Custom 2",
-        max_ramp_rate_c_per_s=1.5,
-        soak=SoakProfile(start_temperature_c=110, end_temperature_c=145, duration_s=110),
-        reflow=ReflowStageProfile(
-            liquidus_temperature_c=170,
-            peak_temperature_c=200,
+            peak_temperature_c=240,
             time_above_liquidus_s=55,
         ),
+        cooling=CoolingProfile(max_cooling_rate_c_per_s=3.0),
     ),
 }
-active_profile_name = "HXP-602"
+custom_template = ReflowProfile(
+    name="Custom 1",
+    max_ramp_rate_c_per_s=2.0,
+    soak=SoakProfile(start_temperature_c=140, end_temperature_c=160, duration_s=90),
+    reflow=ReflowStageProfile(
+        liquidus_temperature_c=217, peak_temperature_c=235, time_above_liquidus_s=45
+    ),
+    cooling=CoolingProfile(max_cooling_rate_c_per_s=3.0),
+)
+profile_slots = [
+    {"id": profile_id, "type": "builtin", "occupied": True, "configuration": profile}
+    for profile_id, profile in profile_defaults.items()
+] + [
+    {
+        "id": f"custom-{number}",
+        "type": "custom",
+        "occupied": False,
+        "configuration": custom_template.model_copy(update={"name": f"Custom {number}"}),
+    }
+    for number in range(1, 7)
+]
+active_profile_id = "builtin-hxp602"
 
 
 async def controller_loop() -> None:

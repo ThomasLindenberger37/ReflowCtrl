@@ -24,9 +24,10 @@ let debugCursor = 0;
 let debugLineCount = 0;
 let lastControllerStatus = null;
 let profilePreviewChart;
-let activeProfileName = "";
-let editedProfileName = "";
+let activeProfileId = "";
+let editedProfileId = "";
 let activeProfileHighlight = null;
+let profilePreviewRequest = 0;
 const availableProfiles = new Map();
 
 async function apiRequest(path, options = {}) {
@@ -73,8 +74,8 @@ function updateStatus(status) {
   ui.start.title = temperatureLocked ? `Oven must cool to ${SAFE_START_TEMPERATURE.toFixed(1)} °C before starting` : "";
   ui.start.setAttribute("aria-label", temperatureLocked ? `Start disabled. Oven temperature is ${Number(status.temperature).toFixed(1)} degrees Celsius.` : "Start reflow process");
   ui.stop.disabled = !CONTROLS_AVAILABLE || !active;
-  profileUi.select.disabled = !CONTROLS_AVAILABLE || active || availableProfiles.size === 0;
-  profileUi.edit.disabled = !CONTROLS_AVAILABLE || active || !profileUi.select.value;
+  profileUi.select.disabled = active || availableProfiles.size === 0;
+  profileUi.edit.disabled = active || !profileUi.select.value;
   ui.processTitle.textContent = active ? `${stateLabels[state]} in progress` : temperatureLocked ? "Oven cooling down" : state === "complete" ? "Profile complete" : "Ready for a new process";
   ui.processNote.textContent = active ? `Process time ${formatTime(status.elapsed_seconds)} · Automatic temperature control active` : temperatureLocked ? `Start is locked until the oven reaches ${SAFE_START_TEMPERATURE.toFixed(1)} °C or below.` : state === "complete" ? "The oven has cooled to a safe starting temperature." : "Start the profile to begin the reflow process.";
 
@@ -473,6 +474,8 @@ const profileUi = {
   soakStart: document.querySelector("#profileSoakStart"), soakEnd: document.querySelector("#profileSoakEnd"),
   soakDuration: document.querySelector("#profileSoakDuration"), liquidus: document.querySelector("#profileLiquidus"),
   peak: document.querySelector("#profilePeak"), tal: document.querySelector("#profileTal"),
+  cooling: document.querySelector("#profileCoolingRate"), reset: document.querySelector("#profileReset"),
+  clear: document.querySelector("#profileClear"), capability: document.querySelector("#profileCapabilityStatus"),
   previewRamp: document.querySelector("#previewRamp"), previewSoak: document.querySelector("#previewSoak"),
   previewTal: document.querySelector("#previewTal"), previewPeak: document.querySelector("#previewPeak")
 };
@@ -501,7 +504,8 @@ function readProfileForm() {
       liquidus_temperature_c: Number(profileUi.liquidus.value),
       peak_temperature_c: Number(profileUi.peak.value),
       time_above_liquidus_s: Number(profileUi.tal.value)
-    }
+    },
+    cooling: { max_cooling_rate_c_per_s: Number(profileUi.cooling.value) }
   };
 }
 
@@ -514,17 +518,18 @@ function writeProfileForm(profile) {
   profileUi.liquidus.value = profile.reflow.liquidus_temperature_c;
   profileUi.peak.value = profile.reflow.peak_temperature_c;
   profileUi.tal.value = profile.reflow.time_above_liquidus_s;
+  profileUi.cooling.value = profile.cooling.max_cooling_rate_c_per_s;
 }
 
-function populateProfileSelect(selectedName = activeProfileName) {
+function populateProfileSelect(selectedId = activeProfileId) {
   profileUi.select.replaceChildren();
-  availableProfiles.forEach(profile => {
+  availableProfiles.forEach(slot => {
     const option = document.createElement("option");
-    option.value = profile.name;
-    option.textContent = profile.name;
+    option.value = slot.id;
+    option.textContent = slot.occupied ? slot.configuration.name : `${slot.configuration.name} — Empty`;
     profileUi.select.appendChild(option);
   });
-  profileUi.select.value = selectedName;
+  profileUi.select.value = selectedId;
   profileUi.select.disabled = availableProfiles.size === 0;
   profileUi.edit.disabled = availableProfiles.size === 0;
 }
@@ -533,8 +538,8 @@ async function loadProfiles() {
   try {
     const response = await apiRequest("/profiles");
     availableProfiles.clear();
-    response.profiles.forEach(profile => availableProfiles.set(profile.name, profile));
-    activeProfileName = response.active_profile;
+    response.profiles.forEach(profile => availableProfiles.set(profile.id, profile));
+    activeProfileId = response.active_profile_id;
     populateProfileSelect();
   } catch (error) {
     profileUi.select.innerHTML = "<option>Profiles unavailable</option>";
@@ -545,14 +550,18 @@ async function loadProfiles() {
 }
 
 async function selectProfile() {
-  const requestedName = profileUi.select.value;
+  const requestedId = profileUi.select.value;
+  if (!availableProfiles.get(requestedId)?.occupied) {
+    profileUi.edit.disabled = false;
+    return;
+  }
   profileUi.select.disabled = true;
   try {
-    await apiRequest("/profiles/active", { method: "PUT", body: JSON.stringify({ name: requestedName }) });
-    activeProfileName = requestedName;
-    showToast(`${requestedName} selected`);
+    await apiRequest("/profiles/active", { method: "PUT", body: JSON.stringify({ id: requestedId }) });
+    activeProfileId = requestedId;
+    showToast(`${availableProfiles.get(requestedId).configuration.name} selected`);
   } catch (error) {
-    profileUi.select.value = activeProfileName;
+    profileUi.select.value = activeProfileId;
     showToast(error.message, true);
   } finally { profileUi.select.disabled = false; }
 }
@@ -643,42 +652,48 @@ function highlightData(curve, metadata, config, highlight) {
   return { line: [], points: pointMap[highlight] ? [pointMap[highlight]] : [] };
 }
 
+async function requestProfilePreview(requestNumber, config) {
+  try {
+    const preview = await apiRequest("/profiles/preview", { method: "POST", body: JSON.stringify(config) });
+    if (requestNumber !== profilePreviewRequest) return;
+    const errors = Object.fromEntries(preview.errors.map(issue => [issue.field, issue.message]));
+    document.querySelectorAll("[data-error-for]").forEach(element => { element.textContent = errors[element.dataset.errorFor] ?? ""; });
+    document.querySelectorAll(".profile-field[data-profile-field]").forEach(field => field.classList.toggle("is-invalid", Boolean(errors[field.dataset.profileField])));
+    profileUi.save.disabled = !preview.valid;
+    profileUi.status.textContent = preview.valid ? "" : preview.errors.map(issue => issue.message).join(" ");
+    profileUi.capability.className = `profile-capability-status ${preview.valid ? (preview.warnings.length ? "warning" : "") : "error"}`;
+    profileUi.capability.textContent = preview.valid
+      ? preview.warnings.length ? `⚠ ${preview.warnings.map(issue => issue.message).join(" ")}` : "✓ Profile within characterized oven limits"
+      : "Profile cannot be executed as requested.";
+    if (!profilePreviewChart) return;
+    profilePreviewChart.data.datasets[0].data = preview.points.map(point => ({ x: point.time_s, y: point.temperature_c }));
+    profilePreviewChart.data.datasets[1].data = preview.valid ? [{ x: 0, y: config.reflow.liquidus_temperature_c }, { x: preview.summary.duration_s, y: config.reflow.liquidus_temperature_c }] : [];
+    profilePreviewChart.data.datasets[2].data = [];
+    profilePreviewChart.data.datasets[3].data = [];
+    profilePreviewChart.$profileMetadata = null;
+    profilePreviewChart.options.scales.x.max = preview.valid ? Math.ceil(preview.summary.duration_s / 10) * 10 : undefined;
+    profilePreviewChart.options.scales.y.max = preview.valid ? Math.ceil((preview.summary.peak_temperature_c + 20) / 20) * 20 : undefined;
+    profilePreviewChart.update();
+    profileUi.previewRamp.textContent = preview.valid ? `${preview.summary.max_ramp_rate_c_per_s.toFixed(1)} °C/s` : "—";
+    profileUi.previewSoak.textContent = preview.valid ? `${config.soak.duration_s} s` : "—";
+    profileUi.previewTal.textContent = preview.valid ? `${preview.summary.time_above_liquidus_s} s` : "—";
+    profileUi.previewPeak.textContent = preview.valid ? `${preview.summary.peak_temperature_c} °C` : "—";
+  } catch (error) {
+    if (requestNumber !== profilePreviewRequest) return;
+    profileUi.save.disabled = true;
+    profileUi.status.textContent = error.message;
+    profileUi.capability.className = "profile-capability-status error";
+    profileUi.capability.textContent = "Preview unavailable.";
+  }
+}
+
 function renderProfileEditor() {
   const config = readProfileForm();
-  const validation = ReflowProfile.validateProfile(config);
-  document.querySelectorAll("[data-error-for]").forEach(element => { element.textContent = validation.errors[element.dataset.errorFor] ?? ""; });
-  document.querySelectorAll(".profile-field[data-profile-field]").forEach(field => field.classList.toggle("is-invalid", Boolean(validation.errors[field.dataset.profileField])));
-  profileUi.save.disabled = !validation.valid;
-  profileUi.status.textContent = validation.valid ? "" : "Fix the highlighted values before saving.";
+  profileUi.save.disabled = true;
+  profileUi.status.textContent = "Validating …";
   profileUi.explanation.textContent = activeProfileHighlight ? profileHighlightHelp[activeProfileHighlight] : "Focus or point at a parameter to see which part of the curve it controls.";
-  if (!profilePreviewChart) return;
-
-  if (!validation.valid) {
-    profilePreviewChart.data.datasets.forEach(dataset => { dataset.data = []; });
-    profilePreviewChart.$profileMetadata = null;
-    profilePreviewChart.update();
-    [profileUi.previewRamp, profileUi.previewSoak, profileUi.previewTal, profileUi.previewPeak].forEach(element => { element.textContent = "—"; });
-    return;
-  }
-
-  const curve = ReflowProfile.generateProfile(config);
-  const metadata = ReflowProfile.getProfileMetadata(config);
-  const highlight = highlightData(curve, metadata, config, activeProfileHighlight);
-  profilePreviewChart.data.datasets[0].data = curve.map(point => ({ x: point.time_s, y: point.temperature_c }));
-  profilePreviewChart.data.datasets[1].data = [{ x: 0, y: config.reflow.liquidus_temperature_c }, { x: metadata.endTime, y: config.reflow.liquidus_temperature_c }];
-  profilePreviewChart.data.datasets[1].borderColor = ["liquidus", "tal"].includes(activeProfileHighlight) ? "#ff9a65" : "#a9563c";
-  profilePreviewChart.data.datasets[2].data = highlight.line;
-  profilePreviewChart.data.datasets[3].data = highlight.points;
-  profilePreviewChart.options.scales.x.max = Math.ceil(metadata.endTime / 10) * 10;
-  profilePreviewChart.options.scales.y.max = Math.ceil((config.reflow.peak_temperature_c + 20) / 20) * 20;
-  profilePreviewChart.$profileMetadata = metadata;
-  profilePreviewChart.$profileHighlight = activeProfileHighlight;
-  profilePreviewChart.$profileConfig = config;
-  profilePreviewChart.update();
-  profileUi.previewRamp.textContent = `${config.max_ramp_rate_c_per_s.toFixed(1)} °C/s`;
-  profileUi.previewSoak.textContent = `${config.soak.duration_s} s`;
-  profileUi.previewTal.textContent = `${config.reflow.time_above_liquidus_s} s`;
-  profileUi.previewPeak.textContent = `${config.reflow.peak_temperature_c} °C`;
+  const requestNumber = ++profilePreviewRequest;
+  setTimeout(() => requestProfilePreview(requestNumber, config), 180);
 }
 
 function setProfileHighlight(highlight) {
@@ -688,10 +703,13 @@ function setProfileHighlight(highlight) {
 }
 
 function openProfileEditor() {
-  const profile = availableProfiles.get(profileUi.select.value);
-  if (!profile) return;
-  editedProfileName = profile.name;
-  writeProfileForm(JSON.parse(JSON.stringify(profile)));
+  const slot = availableProfiles.get(profileUi.select.value);
+  if (!slot) return;
+  editedProfileId = slot.id;
+  writeProfileForm(JSON.parse(JSON.stringify(slot.configuration)));
+  profileUi.reset.hidden = slot.type !== "builtin";
+  profileUi.clear.hidden = slot.type !== "custom" || !slot.occupied;
+  profileUi.save.textContent = slot.occupied ? "Save Profile" : "Create Profile";
   profileUi.backdrop.hidden = false;
   document.body.classList.add("modal-open");
   createProfilePreviewChart();
@@ -708,25 +726,36 @@ function closeProfileEditor() {
 async function saveProfile(event) {
   event.preventDefault();
   const config = readProfileForm();
-  const validation = ReflowProfile.validateProfile(config);
-  if (!validation.valid) { renderProfileEditor(); return; }
   profileUi.save.disabled = true;
   profileUi.status.textContent = "Saving profile …";
   try {
-    const saved = await apiRequest("/profile", {
+    const saved = await apiRequest(`/profiles/${editedProfileId}`, {
       method: "PUT",
-      body: JSON.stringify({ original_name: editedProfileName, profile: config })
+      body: JSON.stringify(config)
     });
-    availableProfiles.delete(editedProfileName);
-    availableProfiles.set(saved.name, saved);
-    if (activeProfileName === editedProfileName) activeProfileName = saved.name;
-    populateProfileSelect(activeProfileName);
+    availableProfiles.set(saved.id, saved);
+    populateProfileSelect(activeProfileId);
     closeProfileEditor();
-    showToast(`${saved.name} saved`);
+    showToast(`${saved.configuration.name} saved`);
   } catch (error) {
     profileUi.status.textContent = error.message;
     profileUi.save.disabled = false;
   }
+}
+
+async function resetProfile() {
+  const saved = await apiRequest(`/profiles/${editedProfileId}/reset`, { method: "POST" });
+  availableProfiles.set(saved.id, saved);
+  writeProfileForm(saved.configuration);
+  renderProfileEditor();
+  showToast("Default profile restored");
+}
+
+async function clearProfile() {
+  await apiRequest(`/profiles/${editedProfileId}`, { method: "DELETE" });
+  await loadProfiles();
+  closeProfileEditor();
+  showToast("Custom profile slot cleared");
 }
 
 const settings = {
@@ -864,10 +893,22 @@ function initialize() {
   characterization.file.addEventListener("change", loadCharacterizationFile);
   characterization.downloadConfig.addEventListener("click", downloadConfigurationJson);
   characterization.saveConfig.addEventListener("click", saveCharacterizationConfiguration);
+  profileUi.select.addEventListener("change", selectProfile);
+  profileUi.edit.addEventListener("click", openProfileEditor);
+  profileUi.close.addEventListener("click", closeProfileEditor);
+  profileUi.cancel.addEventListener("click", closeProfileEditor);
+  profileUi.form.addEventListener("submit", saveProfile);
+  profileUi.reset.addEventListener("click", resetProfile);
+  profileUi.clear.addEventListener("click", clearProfile);
+  profileUi.form.querySelectorAll("input").forEach(input => input.addEventListener("input", renderProfileEditor));
+  document.querySelectorAll(".profile-field[data-highlight]").forEach(field => {
+    field.addEventListener("mouseenter", () => setProfileHighlight(field.dataset.highlight));
+    field.addEventListener("mouseleave", () => setProfileHighlight(null));
+    field.addEventListener("focusin", () => setProfileHighlight(field.dataset.highlight));
+  });
   ui.start.disabled = true; ui.start.title = "Process control is not implemented yet";
   ui.stop.disabled = true;
-  profileUi.select.innerHTML = "<option>Profiles not implemented</option>";
-  profileUi.select.disabled = true; profileUi.edit.disabled = true;
+  loadProfiles();
   settings.toggle.disabled = true; settings.toggle.title = "Settings are not implemented yet";
   pollStatus(); setInterval(pollStatus, 1000); setInterval(pollDebugLogs, 1000); setInterval(pollCharacterization, 400);
 }

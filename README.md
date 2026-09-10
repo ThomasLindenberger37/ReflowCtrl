@@ -5,8 +5,9 @@ Weboberfläche. Das Projekt verwendet C++ und ESP-IDF und befindet sich in Entwi
 
 Aktuell unterstützt die Firmware Temperaturmessung mit einem MAX6675,
 Ofencharakterisierung, einen browserbasierten Debug-Terminal und Firmware-Updates
-über WLAN. Die automatische Regelung anhand von Reflow-Profilen ist noch nicht
-implementiert; die entsprechenden Bedienelemente sind deaktiviert.
+über WLAN sowie persistente, charakterisierungsabhängige Reflow-Profile. Die
+automatische Prozessregelung ist noch nicht implementiert; Start und Stop bleiben
+deshalb deaktiviert.
 
 ## Hardware
 
@@ -83,8 +84,8 @@ speichert die analysierte Konfiguration dauerhaft im Flash; sie wird beim Öffne
 des Dialogs auch nach einem Neustart wieder geladen. Rohdaten als CSV bleiben im
 Browser und müssen bei Bedarf heruntergeladen werden.
 
-Profilsteuerung, Profilverwaltung und Einstellungen sind in der Firmware noch
-nicht verfügbar. Der separate FastAPI-Mock bildet zusätzliche Entwicklungsfunktionen
+Die Firmware verwaltet zwei wiederherstellbare Standardprofile und sechs Custom-Slots.
+Prozesssteuerung und Einstellungen sind noch nicht verfügbar. Der separate FastAPI-Mock bildet zusätzliche Entwicklungsfunktionen
 ab und entspricht nicht vollständig dem Funktionsumfang der Firmware.
 
 ## Updates über WLAN

@@ -3,6 +3,9 @@ idf_component_register(
         "main.cpp"
         "characterization_configuration.cpp"
         "characterization_storage.cpp"
+        "profile.cpp"
+        "profile_json.cpp"
+        "profile_storage.cpp"
         "message_bus.cpp"
         "components/button.cpp"
         "components/button_press_logger.cpp"
@@ -24,7 +27,6 @@ idf_component_register(
         "../webserver/frontend/style.css"
         "../webserver/frontend/app.js"
         "../webserver/frontend/characterization-analyzer.js"
-        "../webserver/frontend/reflow-profile.js"
     REQUIRES
         app_update
         bootloader_support

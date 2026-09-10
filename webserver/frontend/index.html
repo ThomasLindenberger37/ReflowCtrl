@@ -13,7 +13,6 @@
     href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap"
     rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
-  <script src="/reflow-profile.js?v=embedded-api-1" defer></script>
   <script src="/characterization-analyzer.js?v=embedded-api-1" defer></script>
   <script src="/app.js?v=embedded-api-1" defer></script>
 </head>
@@ -325,6 +324,18 @@
                 <span class="field-error" data-error-for="reflow.time_above_liquidus_s"></span>
               </div>
             </section>
+
+            <section class="parameter-group">
+              <div class="parameter-heading"><span>04</span>
+                <div><strong>Cooling</strong><small>Limits thermal stress during cooldown.</small></div>
+              </div>
+              <div class="profile-field" data-profile-field="cooling.max_cooling_rate_c_per_s">
+                <label for="profileCoolingRate">Maximum cooling rate</label>
+                <div class="unit-input"><input id="profileCoolingRate" type="number" min="0.1" max="20" step="0.1"
+                    inputmode="decimal"><span>°C/s</span></div>
+                <span class="field-error" data-error-for="cooling.max_cooling_rate_c_per_s"></span>
+              </div>
+            </section>
           </div>
 
           <section class="profile-preview" aria-labelledby="profilePreviewTitle">
@@ -338,6 +349,7 @@
             <div class="profile-preview-chart"><canvas id="profilePreviewChart"></canvas></div>
             <p id="profileExplanation" class="profile-explanation">Focus or point at a parameter to see which part of
               the curve it controls.</p>
+            <p id="profileCapabilityStatus" class="profile-capability-status" role="status"></p>
             <div class="profile-preview-stats">
               <span><small>MAX. RAMP</small><strong id="previewRamp">—</strong></span>
               <span><small>SOAK</small><strong id="previewSoak">—</strong></span>
@@ -348,7 +360,8 @@
         </div>
         <footer class="profile-modal-footer">
           <p id="profileFormStatus" role="status"></p>
-          <div><button id="profileCancel" class="button button-secondary" type="button">Cancel</button><button
+          <div><button id="profileReset" class="button button-secondary" type="button" hidden>Restore Default</button><button
+              id="profileClear" class="button button-danger" type="button" hidden>Clear Slot</button><button id="profileCancel" class="button button-secondary" type="button">Cancel</button><button
               id="profileSave" class="button button-primary" type="submit" disabled>Save Profile</button></div>
         </footer>
       </form>

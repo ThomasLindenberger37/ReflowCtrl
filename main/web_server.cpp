@@ -17,6 +17,7 @@
 #include "ipv4_address.hpp"
 #include "log_buffer.hpp"
 #include "mdns.h"
+#include "profile_storage.hpp"
 
 extern const char index_html_start[] asm("_binary_index_html_start");
 extern const char index_html_end[] asm("_binary_index_html_end");
@@ -28,8 +29,6 @@ extern const char characterization_analyzer_js_start[] asm(
     "_binary_characterization_analyzer_js_start");
 extern const char characterization_analyzer_js_end[] asm(
     "_binary_characterization_analyzer_js_end");
-extern const char reflow_profile_js_start[] asm("_binary_reflow_profile_js_start");
-extern const char reflow_profile_js_end[] asm("_binary_reflow_profile_js_end");
 
 namespace reflowCtrl {
 namespace {
@@ -278,7 +277,8 @@ esp_err_t WebServer::start() {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = HTTP_PORT;
     config.stack_size = 6144;
-    config.max_uri_handlers = 15;
+    config.max_uri_handlers = 21;
+    config.uri_match_fn = httpd_uri_match_wildcard;
     httpd_handle_t server = nullptr;
     ESP_RETURN_ON_ERROR(httpd_start(&server, &config), TAG, "Failed to start HTTP server");
 
@@ -287,15 +287,12 @@ esp_err_t WebServer::start() {
     static WebAsset app_asset{app_js_start, app_js_end, "application/javascript"};
     static WebAsset analyzer_asset{characterization_analyzer_js_start,
                                    characterization_analyzer_js_end, "application/javascript"};
-    static WebAsset profile_asset{reflow_profile_js_start, reflow_profile_js_end,
-                                  "application/javascript"};
     const std::array endpoints{
         httpd_uri_t{"/", HTTP_GET, &send_asset, &index_asset},
         httpd_uri_t{"/index.html", HTTP_GET, &send_asset, &index_asset},
         httpd_uri_t{"/style.css", HTTP_GET, &send_asset, &style_asset},
         httpd_uri_t{"/app.js", HTTP_GET, &send_asset, &app_asset},
         httpd_uri_t{"/characterization-analyzer.js", HTTP_GET, &send_asset, &analyzer_asset},
-        httpd_uri_t{"/reflow-profile.js", HTTP_GET, &send_asset, &profile_asset},
         httpd_uri_t{"/api/status", HTTP_GET, &send_status, this},
         httpd_uri_t{"/api/logs", HTTP_GET, &send_logs, nullptr},
         httpd_uri_t{"/ota", HTTP_POST, &handle_ota_trigger, this},
@@ -313,6 +310,8 @@ esp_err_t WebServer::start() {
 
     ESP_RETURN_ON_ERROR(register_characterization_storage(server), TAG,
                         "Failed to register characterization storage");
+    ESP_RETURN_ON_ERROR(register_profile_storage(server), TAG,
+                        "Failed to register profile storage");
 
     ESP_LOGI(TAG, "Listening at http://%s.local", HOSTNAME);
     return ESP_OK;

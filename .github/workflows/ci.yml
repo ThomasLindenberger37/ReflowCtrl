@@ -1,0 +1,152 @@
+name: CI
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  formatting-and-lint:
+    name: Fast / Formatting and lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install format and shell tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes clang-format shellcheck
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.8.17"
+          enable-cache: true
+
+      - name: Install Python dependencies
+        run: uv sync --locked
+
+      - name: Check C and C++ formatting
+        shell: bash
+        run: |
+          mapfile -t source_files < <(
+            find main tests \
+              -type f \( -name '*.c' -o -name '*.cpp' -o -name '*.hpp' \) \
+              -print | sort
+          )
+          clang-format --dry-run --Werror "${source_files[@]}"
+
+      - name: Check Python formatting and lint
+        run: |
+          uv run ruff format --check .
+          uv run ruff check .
+
+      - name: Check shell scripts
+        run: shellcheck tools/dev tools/idf
+
+      - name: Check MessageBus subscription capacity
+        run: python3 tools/analyze_message_bus_subscriptions.py
+
+  script-tests:
+    name: Fast / Python and JavaScript tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.8.17"
+          enable-cache: true
+
+      - name: Install Python dependencies
+        run: uv sync --locked
+
+      - name: Run Python tests
+        run: uv run python -m unittest discover -s tests -p '*_test.py'
+
+      - name: Run JavaScript tests
+        run: node --test tests/characterization_ui_test.js
+
+  host-cpp:
+    name: C++ tests and static analysis
+    needs: [formatting-and-lint, script-tests]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install C++ analysis tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes clang-tidy cppcheck jq ninja-build
+
+      - name: Configure host tests
+        run: >-
+          cmake -S tests -B build/unit-tests -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      - name: Build host tests
+        run: cmake --build build/unit-tests
+
+      - name: Run C++ tests
+        run: ctest --test-dir build/unit-tests --output-on-failure
+
+      - name: Run clang-tidy on host-buildable C++
+        shell: bash
+        run: |
+          mapfile -t tidy_files < <(
+            jq -r '.[].file' build/unit-tests/compile_commands.json \
+              | sort -u \
+              | grep -E "^${GITHUB_WORKSPACE}/(main|tests)/.*\\.cpp$"
+          )
+          clang-tidy -p build/unit-tests "${tidy_files[@]}"
+
+      - name: Run cppcheck on host-buildable code
+        run: |
+          cppcheck \
+            --project=build/unit-tests/compile_commands.json \
+            --file-filter="${GITHUB_WORKSPACE}/main/*" \
+            --enable=warning,performance,portability \
+            --inline-suppr \
+            --suppress=missingIncludeSystem \
+            --suppress='sizeofDereferencedVoidPointer:main/message_bus.hpp' \
+            --error-exitcode=1
+
+  firmware-build:
+    name: ESP-IDF firmware build
+    needs: [formatting-and-lint, script-tests]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Create CI WiFi credentials
+        run: cp main/Credentials.example.hpp main/Credentials.hpp
+
+      - name: Build firmware with ESP-IDF 6.1
+        run: |
+          docker run --rm \
+            --volume "${GITHUB_WORKSPACE}:/project" \
+            --workdir /project \
+            espressif/idf:v6.1 \
+            idf.py build

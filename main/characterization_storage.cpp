@@ -15,6 +15,24 @@ constexpr char TAG[] = "characterization_store";
 constexpr char NVS_NAMESPACE[] = "characterize";
 constexpr char NVS_KEY[] = "config_v1";
 
+esp_err_t read_configuration(std::unique_ptr<char[]>& data, std::size_t& size) {
+    nvs_handle_t handle{};
+    esp_err_t result = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
+    if (result == ESP_OK) {
+        result = nvs_get_blob(handle, NVS_KEY, nullptr, &size);
+        if (result == ESP_OK) {
+            if (size == 0 || size > MAX_CHARACTERIZATION_CONFIGURATION_SIZE) {
+                result = ESP_ERR_INVALID_SIZE;
+            } else {
+                data.reset(new (std::nothrow) char[size]);
+                result = data ? nvs_get_blob(handle, NVS_KEY, data.get(), &size) : ESP_ERR_NO_MEM;
+            }
+        }
+        nvs_close(handle);
+    }
+    return result;
+}
+
 esp_err_t json_error(httpd_req_t* request, const char* status, const char* body) {
     httpd_resp_set_status(request, status);
     httpd_resp_set_type(request, "application/json");
@@ -29,22 +47,9 @@ esp_err_t storage_error(httpd_req_t* request, esp_err_t error) {
 
 esp_err_t load_configuration(httpd_req_t* request) {
     httpd_resp_set_hdr(request, "Cache-Control", "no-store");
-    nvs_handle_t handle{};
-    esp_err_t result = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
     std::size_t size = 0;
     std::unique_ptr<char[]> data;
-    if (result == ESP_OK) {
-        result = nvs_get_blob(handle, NVS_KEY, nullptr, &size);
-        if (result == ESP_OK) {
-            if (size == 0 || size > MAX_CHARACTERIZATION_CONFIGURATION_SIZE) {
-                result = ESP_ERR_INVALID_SIZE;
-            } else {
-                data.reset(new (std::nothrow) char[size]);
-                result = data ? nvs_get_blob(handle, NVS_KEY, data.get(), &size) : ESP_ERR_NO_MEM;
-            }
-        }
-        nvs_close(handle);
-    }
+    const esp_err_t result = read_configuration(data, size);
     if (result == ESP_ERR_NVS_NOT_FOUND) {
         httpd_resp_set_type(request, "application/json");
         return httpd_resp_sendstr(request, "null");
@@ -110,6 +115,16 @@ esp_err_t register_characterization_storage(httpd_handle_t server) {
                            nullptr};
     const esp_err_t result = httpd_register_uri_handler(server, &load);
     return result == ESP_OK ? httpd_register_uri_handler(server, &save) : result;
+}
+
+esp_err_t load_saved_characterization(std::string& configuration) {
+    std::size_t size = 0;
+    std::unique_ptr<char[]> data;
+    const esp_err_t result = read_configuration(data, size);
+    if (result == ESP_OK) {
+        configuration.assign(data.get(), size);
+    }
+    return result;
 }
 
 }  // namespace reflowCtrl
