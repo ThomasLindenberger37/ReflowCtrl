@@ -10,68 +10,78 @@
 namespace reflowCtrl {
 namespace {
 
-TEST(RelayWindowController, ProducesExpectedOnTimeForEveryPowerLevel) {
+TEST(RelayWindowController, ProducesThreeSecondOrLongerPulsesForEveryPowerLevel) {
     const struct {
         HeaterPower power;
         std::uint32_t on_time_ms;
     } cases[] = {{HeaterPower::Off, 0},
-                 {HeaterPower::P25, 1'000},
-                 {HeaterPower::P50, 2'000},
-                 {HeaterPower::P75, 3'000},
-                 {HeaterPower::P100, 4'000}};
+                 {HeaterPower::P25, 3'000},
+                 {HeaterPower::P50, 6'000},
+                 {HeaterPower::P75, 9'000},
+                 {HeaterPower::P100, 12'000}};
     for (const auto& test : cases) {
         RelayWindowController relay;
         relay.start(0);
         relay.request(test.power);
-        EXPECT_EQ(relay.update(4'000), test.on_time_ms > 0);
-        if (test.on_time_ms < RelayWindowController::WINDOW_MS) {
-            EXPECT_FALSE(relay.update(4'000 + test.on_time_ms));
+        EXPECT_EQ(relay.update(0), test.on_time_ms > 0);
+        if (test.on_time_ms < RelayWindowController::MODULATION_PERIOD_MS) {
+            EXPECT_FALSE(relay.update(test.on_time_ms));
         } else {
-            EXPECT_TRUE(relay.update(7'999));
+            EXPECT_TRUE(relay.update(test.on_time_ms - 1));
         }
     }
 }
 
-TEST(RelayWindowController, AppliesPowerOnlyAtNextWindow) {
+TEST(RelayWindowController, AppliesRequestedStateAfterThreeSeconds) {
     RelayWindowController relay;
-    relay.start(100);
-    relay.request(HeaterPower::P25);
-    EXPECT_FALSE(relay.update(3'999));
-    EXPECT_TRUE(relay.update(4'100));
+    relay.start(0);
     relay.request(HeaterPower::P100);
-    EXPECT_FALSE(relay.update(5'100));
-    EXPECT_TRUE(relay.update(8'100));
+    ASSERT_TRUE(relay.update(0));
+    relay.request(HeaterPower::Off);
+    EXPECT_TRUE(relay.update(2'999));
+    EXPECT_FALSE(relay.update(3'000));
 }
 
 TEST(RelayWindowController, SafetyOffIsImmediate) {
     RelayWindowController relay;
     relay.start(0);
     relay.request(HeaterPower::P100);
-    ASSERT_TRUE(relay.update(4'000));
-    relay.safety_off(4'500);
+    ASSERT_TRUE(relay.update(0));
+    relay.safety_off(500);
     EXPECT_FALSE(relay.relay_enabled());
     EXPECT_EQ(relay.active_power(), HeaterPower::Off);
     EXPECT_EQ(relay.requested_power(), HeaterPower::Off);
 }
 
-TEST(RelayWindowController, SwitchesAtMostOnThenOffWithinAWindow) {
+TEST(RelayWindowController, NeverSwitchesMoreOftenThanEveryThreeSeconds) {
     RelayWindowController relay;
     relay.start(0);
-    relay.request(HeaterPower::P75);
-    bool previous = relay.update(4'000);
-    int transitions = 0;
-    for (std::uint32_t time_ms = 4'100; time_ms < 8'000; time_ms += 100) {
+    relay.request(HeaterPower::P50);
+    bool previous = relay.update(0);
+    std::uint32_t last_transition_ms = 0;
+    for (std::uint32_t time_ms = 200; time_ms <= 24'000; time_ms += 200) {
         const bool current = relay.update(time_ms);
-        transitions += current != previous ? 1 : 0;
+        if (current != previous) {
+            EXPECT_GE(time_ms - last_transition_ms, RelayWindowController::MINIMUM_RELAY_DWELL_MS);
+            last_transition_ms = time_ms;
+        }
         previous = current;
     }
-    EXPECT_EQ(transitions, 1);
 }
 
 TEST(TemperatureController, QuantizesCharacterizationFeedforward) {
     TemperatureController controller;
     const TemperatureControlInput input{150.0F, 147.0F, 1.0F, 1.0F, 2.0F};
     EXPECT_EQ(controller.update(input), HeaterPower::P75);
+}
+
+TEST(TemperatureController, UsesTheHeatingRateAtTheCurrentTemperature) {
+    TemperatureController fast_oven;
+    TemperatureController slow_oven;
+    const TemperatureControlInput at_fast_temperature{150.0F, 147.0F, 0.42F, 0.2F, 0.89F};
+    const TemperatureControlInput at_slow_temperature{150.0F, 147.0F, 0.42F, 0.2F, 0.43F};
+    EXPECT_LT(heater_power_percent(fast_oven.update(at_fast_temperature)),
+              heater_power_percent(slow_oven.update(at_slow_temperature)));
 }
 
 TEST(TemperatureController, CoolingAlwaysTurnsHeatingOff) {
@@ -105,6 +115,11 @@ TEST(TemperatureController, ExcessActualRampReducesPowerBeforeTarget) {
     EXPECT_LT(heater_power_percent(reduced_power), heater_power_percent(normal_power));
 }
 
+TEST(TemperatureController, ProjectedOvershootTurnsHeatingOffBeforeTheTarget) {
+    TemperatureController controller;
+    EXPECT_EQ(controller.update({180.0F, 175.0F, 0.5F, 1.7F, 1.0F}), HeaterPower::Off);
+}
+
 TEST(TemperatureHistory, UsesSmoothedHistoryForRamp) {
     TemperatureHistory history;
     history.add(0, 100.0F);
@@ -116,10 +131,8 @@ TEST(TemperatureHistory, UsesSmoothedHistoryForRamp) {
 
 TEST(SafetyController, RejectsInvalidOvertemperatureAndImplausibleSamples) {
     SafetyController safety;
-    EXPECT_EQ(safety.check_sample(NAN, 1'000, false, 0.0F, 0),
-              SafetyFault::InvalidTemperature);
-    EXPECT_EQ(safety.check_sample(250.0F, 1'000, false, 0.0F, 0),
-              SafetyFault::Overtemperature);
+    EXPECT_EQ(safety.check_sample(NAN, 1'000, false, 0.0F, 0), SafetyFault::InvalidTemperature);
+    EXPECT_EQ(safety.check_sample(250.0F, 1'000, false, 0.0F, 0), SafetyFault::Overtemperature);
     EXPECT_EQ(safety.check_sample(130.1F, 1'000, true, 100.0F, 0),
               SafetyFault::ImplausibleTemperatureChange);
     EXPECT_EQ(safety.check_sample(130.0F, 1'000, true, 100.0F, 0), SafetyFault::None);

@@ -17,6 +17,39 @@ struct TargetPoint {
     float ramp_c_per_s = 0.0F;
 };
 
+float heating_rate_at(const std::optional<OvenCapabilities>& oven, const float temperature_c,
+                      const float fallback_rate_c_per_s) {
+    if (!oven || oven->heating_rates.empty()) {
+        return fallback_rate_c_per_s;
+    }
+
+    const CharacterizationRatePoint* lower = nullptr;
+    const CharacterizationRatePoint* upper = nullptr;
+    for (const CharacterizationRatePoint& point : oven->heating_rates) {
+        if (point.temperature_c <= temperature_c
+            && (lower == nullptr || point.temperature_c > lower->temperature_c)) {
+            lower = &point;
+        }
+        if (point.temperature_c >= temperature_c
+            && (upper == nullptr || point.temperature_c < upper->temperature_c)) {
+            upper = &point;
+        }
+    }
+    if (lower == nullptr) {
+        return static_cast<float>(std::abs(upper->rate_c_per_s));
+    }
+    if (upper == nullptr) {
+        return static_cast<float>(std::abs(lower->rate_c_per_s));
+    }
+    if (lower == upper) {
+        return static_cast<float>(std::abs(lower->rate_c_per_s));
+    }
+    const double span_c = upper->temperature_c - lower->temperature_c;
+    const double progress = (static_cast<double>(temperature_c) - lower->temperature_c) / span_c;
+    return static_cast<float>(
+        std::abs(lower->rate_c_per_s + (upper->rate_c_per_s - lower->rate_c_per_s) * progress));
+}
+
 TargetPoint target_at(const std::vector<CurvePoint>& curve, const double elapsed_s) {
     if (curve.empty()) {
         return {};
@@ -149,7 +182,8 @@ void ReflowController::update_control(const std::uint32_t time_ms,
     telemetry_.temperature_error_c = target.temperature_c - temperature_c;
     telemetry_.requested_power = temperature_controller_.update(
         {target.temperature_c, temperature_c, target.ramp_c_per_s, actual_ramp,
-         static_cast<float>(profile_.max_ramp_rate_c_per_s)});
+         heating_rate_at(oven_, temperature_c,
+                         static_cast<float>(profile_.max_ramp_rate_c_per_s))});
     relay_window_.request(telemetry_.requested_power);
     apply_relay(relay_window_.update(time_ms));
     telemetry_.active_power = relay_window_.active_power();
@@ -160,8 +194,8 @@ void ReflowController::tick() noexcept {
     const std::uint32_t time_ms = now_ms();
     lock();
     if (telemetry_.state == ReflowState::Running) {
-        const SafetyFault fault = safety_controller_.check_staleness(time_ms,
-                                                                     last_temperature_at_ms_);
+        const SafetyFault fault =
+            safety_controller_.check_staleness(time_ms, last_temperature_at_ms_);
         if (fault != SafetyFault::None) {
             stop(ReflowState::Fault, time_ms);
             ESP_LOGE(TAG, "Safety fault: %s", safety_fault_name(fault));

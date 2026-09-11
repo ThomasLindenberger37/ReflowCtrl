@@ -9,7 +9,8 @@ namespace reflowCtrl {
 
 class RelayWindowController {
    public:
-    static constexpr std::uint32_t WINDOW_MS = 4'000;
+    static constexpr std::uint32_t MINIMUM_RELAY_DWELL_MS = 3'000;
+    static constexpr std::uint32_t MODULATION_PERIOD_MS = 12'000;
 
     void start(std::uint32_t now_ms) noexcept;
     void request(HeaterPower power) noexcept;
@@ -28,10 +29,14 @@ class RelayWindowController {
     [[nodiscard]] std::uint32_t window_progress_ms(std::uint32_t now_ms) const noexcept;
 
    private:
-    std::uint32_t window_started_at_ms_ = 0;
+    [[nodiscard]] bool requested_relay_state(std::uint32_t now_ms) const noexcept;
+
+    std::uint32_t modulation_started_at_ms_ = 0;
+    std::uint32_t last_transition_at_ms_ = 0;
     HeaterPower requested_power_ = HeaterPower::Off;
     HeaterPower active_power_ = HeaterPower::Off;
     bool relay_enabled_ = false;
+    bool has_transitioned_ = false;
 };
 
 }  // namespace reflowCtrl

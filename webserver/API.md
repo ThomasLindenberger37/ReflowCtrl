@@ -98,9 +98,9 @@ Fields:
 | `target_ramp_rate` | number | Current target gradient in °C/s |
 | `actual_ramp_rate` | number | Smoothed measured gradient in °C/s |
 | `requested_heater_power` | integer | Power selected for the next relay window: `0`, `25`, `50`, `75`, or `100` percent |
-| `active_heater_power` | integer | Power latched for the current four-second relay window |
+| `active_heater_power` | integer | Power currently used by the relay modulation |
 | `relay_state` | boolean | Current physical relay command |
-| `window_progress_seconds` | number | Elapsed time in the current four-second relay window |
+| `window_progress_seconds` | number | Elapsed time in the current twelve-second power-modulation cycle; relay changes are separated by at least three seconds |
 
 Recommended polling interval: once per second. The browser stores chart history locally; this response contains only the current sample.
 

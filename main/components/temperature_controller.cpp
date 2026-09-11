@@ -16,25 +16,28 @@ HeaterPower TemperatureController::update(const TemperatureControlInput& input) 
         power_ = HeaterPower::Off;
         return power_;
     }
+    const float projected_error =
+        input.target_temperature_c + input.target_ramp_c_per_s * config_.thermal_lookahead_s
+        - (input.actual_temperature_c
+           + std::max(0.0F, input.actual_ramp_c_per_s) * config_.thermal_lookahead_s);
+    if (projected_error < -config_.hysteresis_c) {
+        power_ = HeaterPower::Off;
+        return power_;
+    }
     if (std::abs(error) <= config_.hysteresis_c) {
         return power_;
     }
 
     int steps = 0;
-    if (input.maximum_heating_rate_c_per_s > 0.0F) {
-        const float feedforward =
-            std::clamp(input.target_ramp_c_per_s / input.maximum_heating_rate_c_per_s, 0.0F, 1.0F);
+    if (input.characterized_heating_rate_c_per_s > 0.0F) {
+        const float feedforward = std::clamp(
+            input.target_ramp_c_per_s / input.characterized_heating_rate_c_per_s, 0.0F, 1.0F);
         steps = static_cast<int>(std::lround(feedforward * 4.0F));
     }
 
     const int correction = std::max(
         1, static_cast<int>(std::ceil(std::abs(error) / config_.error_per_feedback_step_c)));
     steps += error > 0.0F ? correction : -correction;
-    if (input.actual_ramp_c_per_s
-            > input.target_ramp_c_per_s + config_.ramp_excess_for_reduction_c_per_s
-        && error < config_.large_steady_error_c) {
-        --steps;
-    }
     if (std::abs(input.target_ramp_c_per_s) <= config_.steady_target_ramp_c_per_s
         && error < config_.large_steady_error_c) {
         steps = std::min(steps, 2);
