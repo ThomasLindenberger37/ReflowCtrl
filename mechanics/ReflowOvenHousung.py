@@ -250,7 +250,7 @@ LID_LABEL_CONFIG = LidLabelConfig(
 )
 
 EXPORT_CONFIG = ExportConfig(
-    directory_name="output_reflowHousing",
+    directory_name="build/mechanics",
     housing_file_name="reflow_oven_controller_housing",
     lid_file_name="reflow_oven_controller_snap_fit_lid",
 )
@@ -1220,8 +1220,8 @@ def create_housing_model(
 
 def export_model(model, export: ExportConfig, file_name: str) -> Path:
     """Export a model as STL and return its path."""
-    output_directory = Path(__file__).with_name(export.directory_name)
-    output_directory.mkdir(exist_ok=True)
+    output_directory = Path(__file__).resolve().parent.parent / export.directory_name
+    output_directory.mkdir(parents=True, exist_ok=True)
     output_path = output_directory / f"{file_name}.stl"
     export_stl(model, output_path)
     return output_path

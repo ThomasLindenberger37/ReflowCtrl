@@ -5,6 +5,7 @@ ARG USERNAME=vscode
 ARG USER_UID=1000
 ARG USER_GID=1000
 ARG UV_VERSION=0.8.17
+ARG BUILD123D_VERSION=0.11.1
 # Update this single pin when upgrading ESP-IDF.
 ARG ESP_IDF_VERSION=v6.1
 
@@ -61,6 +62,11 @@ RUN apt-get update \
         libffi-dev \
         libssl-dev \
         libusb-1.0-0 \
+        libgl1 \
+        libglu1-mesa \
+        libgomp1 \
+        libxrender1 \
+        fontconfig \
         usbutils \
         dfu-util \
     && ln -s /usr/bin/fdfind /usr/local/bin/fd \
@@ -71,6 +77,12 @@ RUN apt-get update \
 RUN curl --fail --silent --show-error --location "https://astral.sh/uv/${UV_VERSION}/install.sh" \
     | env UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh \
     && uv --version
+
+# Keep CAD dependencies separate from the ESP-IDF Python environment.
+ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python
+RUN uv venv --python 3.12 /opt/mechanics \
+    && uv pip install --python /opt/mechanics/bin/python "build123d==${BUILD123D_VERSION}" \
+    && chmod -R a+rX /opt/uv /opt/mechanics
 
 # ESP-IDF and its Python environment are installed by Espressif's installer.
 RUN git clone --branch "${ESP_IDF_VERSION}" --depth 1 --recursive \
