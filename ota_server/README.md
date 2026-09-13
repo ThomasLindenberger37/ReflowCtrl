@@ -81,7 +81,43 @@ build/reflowCtrl.bin
 
 ## 4. OTA-Server starten
 
-Der Server wird im Devcontainer ausgeführt. Docker Engine läuft dabei innerhalb von WSL. Damit
+Der Server wird im Devcontainer ausgeführt. Die Netzwerkeinrichtung hängt vom Host-System ab.
+
+### Linux mit Docker Engine und firewalld
+
+Die Datei `.devcontainer/devcontainer.json` verwendet bereits `--network=host`. Damit ist der
+OTA-Server über die LAN-Adresse des Linux-Hosts erreichbar, sofern dessen Firewall eingehende
+Verbindungen auf TCP-Port 8070 erlaubt. Windows-/WSL-Firewallregeln gelten auf Linux nicht.
+
+Die folgenden Befehle im Terminal des Linux-Hosts ausführen, nicht im Devcontainer. Zuerst die
+Zone der LAN-Schnittstelle prüfen:
+
+```sh
+sudo firewall-cmd --get-active-zones
+```
+
+Für die Zone `public` und einen ESP mit der Adresse `192.168.0.57` den Download-Port gezielt
+freigeben. Zone und ESP-Adresse bei Bedarf anpassen:
+
+```sh
+sudo firewall-cmd --zone=public --add-rich-rule='rule family="ipv4" source address="192.168.0.57/32" port port="8070" protocol="tcp" accept'
+sudo firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" source address="192.168.0.57/32" port port="8070" protocol="tcp" accept'
+```
+
+Der erste Befehl aktiviert die Freigabe sofort, der zweite speichert sie dauerhaft. Ein Reload
+ist dafür nicht erforderlich. Ändert sich die ESP-IP-Adresse, muss auch die Regel angepasst
+werden; eine DHCP-Reservierung im Router hält die Adresse stabil.
+
+Falls mDNS noch nicht erlaubt ist, zusätzlich den Dienst in derselben Zone freigeben:
+
+```sh
+sudo firewall-cmd --zone=public --add-service=mdns
+sudo firewall-cmd --permanent --zone=public --add-service=mdns
+```
+
+### Windows mit WSL
+
+Docker Engine läuft hierbei innerhalb von WSL. Damit
 WSL die Windows-LAN-Schnittstelle einschließlich Multicast verwendet, muss in
 `%UserProfile%\.wslconfig` der gespiegelte Netzwerkmodus aktiviert sein:
 
@@ -105,6 +141,8 @@ New-NetFirewallHyperVRule -Name "ReflowCtrlOtaMdns" -DisplayName "ReflowCtrl OTA
 
 Nach einer Änderung an der Devcontainer-Netzwerkkonfiguration muss der Container neu gebaut oder
 neu geöffnet werden.
+
+### Server ausführen
 
 Die Python-Abhängigkeiten müssen beim ersten Mal beziehungsweise nach Änderungen an `uv.lock`
 installiert werden:
@@ -193,6 +231,26 @@ ESP die Firmware schreibt, sollten weder Server noch ESP ausgeschaltet werden.
 - In der Serverausgabe prüfen, ob die korrekte LAN-Adresse in der Firmware-URL aufgeführt wird.
 - Prüfen, ob der Server `reflow-ctrl.local` per mDNS findet.
 - Die serielle ESP-Ausgabe auf WLAN- oder OTA-Fehler kontrollieren.
+
+### OTA-Trigger akzeptiert, aber kein Download
+
+Bleibt die Ausgabe bei `ESP accepted OTA trigger` stehen, funktionieren die Geräteerkennung und
+der HTTP-Trigger zum ESP bereits. Der Firmware-Download benötigt jedoch eine neue Verbindung
+in Gegenrichtung:
+
+```text
+Entwicklungsrechner -> ESP:80                  OTA-Trigger
+ESP -> Entwicklungsrechner:8070/firmware.bin   Firmware-Download
+```
+
+Eine funktionierende mDNS-Auflösung bedeutet daher nicht, dass TCP-Port 8070 erreichbar ist.
+Unter Linux mit firewalld die Freigabe im Abschnitt oben prüfen. Beispielsweise erlaubt die
+Zone `public` möglicherweise mDNS auf UDP-Port 5353, weist aber den Firmware-Download ab.
+
+Bei laufendem OTA-Server die angezeigte Firmware-URL von einem anderen Gerät im selben LAN
+öffnen. Ein Test auf dem Entwicklungsrechner selbst prüft die eingehende LAN-Verbindung nicht
+ausreichend. Der Server wartet nach dem Trigger weiter, während der ESP fehlgeschlagene
+Downloadversuche wiederholt.
 
 ### `Firmware not found`
 
