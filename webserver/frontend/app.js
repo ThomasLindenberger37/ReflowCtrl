@@ -26,6 +26,7 @@ let debugCursor = 0;
 let debugLineCount = 0;
 let lastControllerStatus = null;
 let interruptedReflowReason = null;
+let debugHistory = [];
 let profilePreviewChart;
 let activeProfileId = "";
 let editedProfileId = "";
@@ -286,12 +287,36 @@ function appendDebugLines(lines) {
   debug.terminal.appendChild(fragment);
   while (debug.terminal.children.length > 300) debug.terminal.firstElementChild.remove();
   debugLineCount += lines.length;
+  debugHistory.push(...lines.map(line => line.text));
+  debugHistory = debugHistory.slice(-500);
+  try { localStorage.setItem("reflow-debug-history-v1", JSON.stringify(debugHistory)); }
+  catch (error) { console.warn("Could not save diagnostic history locally", error); }
   debug.count.textContent = `${debugLineCount} ${debugLineCount === 1 ? "line" : "lines"}`;
   debug.terminal.scrollTop = debug.terminal.scrollHeight;
 }
 
+function restoreDebugHistory() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("reflow-debug-history-v1") || "[]");
+    if (!Array.isArray(saved)) return;
+    debugHistory = saved.filter(line => typeof line === "string").slice(-500);
+    if (!debugHistory.length) return;
+    const restoredLines = debugHistory.map(text => ({ text }));
+    debug.terminal.querySelector(".terminal-empty")?.remove();
+    const fragment = document.createDocumentFragment();
+    restoredLines.forEach(line => {
+      const element = document.createElement("div");
+      element.className = "terminal-line";
+      element.textContent = line.text;
+      fragment.appendChild(element);
+    });
+    debug.terminal.appendChild(fragment);
+    debugLineCount = debugHistory.length;
+    debug.count.textContent = `${debugLineCount} ${debugLineCount === 1 ? "line" : "lines"}`;
+  } catch (error) { console.warn("Could not restore local diagnostic history", error); }
+}
+
 async function pollDebugLogs() {
-  if (debug.toggle.getAttribute("aria-expanded") !== "true") return;
   try {
     const result = await apiRequest(`/logs?after=${debugCursor}`);
     appendDebugLines(result.lines);
@@ -313,11 +338,14 @@ function clearDebugOutput() {
   placeholder.textContent = "Output cleared. Waiting for new backend output …";
   debug.terminal.appendChild(placeholder);
   debugLineCount = 0;
+  debugHistory = [];
+  try { localStorage.removeItem("reflow-debug-history-v1"); }
+  catch (error) { console.warn("Could not clear local diagnostic history", error); }
   debug.count.textContent = "0 lines";
 }
 
 function downloadDebugLog() {
-  const lines = [...debug.terminal.querySelectorAll(".terminal-line")].map(line => line.textContent);
+  const lines = debugHistory;
   if (!lines.length) {
     showToast("No log output available to download", true);
     return;
@@ -1028,6 +1056,7 @@ async function saveSettings(event) {
 }
 
 function initialize() {
+  restoreDebugHistory();
   if (typeof Chart !== "undefined") createChart();
   ui.start.addEventListener("click", startProcess);
   peakPrompt.close.addEventListener("click", closePeakPrompt);

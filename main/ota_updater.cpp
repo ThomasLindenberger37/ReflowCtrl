@@ -55,7 +55,7 @@ bool confirm_update_with_host(const char* host) {
     return result == ESP_OK && status == 200;
 }
 
-bool ota_update_with_host(const char* host) {
+esp_err_t ota_update_with_host(const char* host) {
     const auto firmware_url = make_url(host, "/firmware.bin");
 
     esp_http_client_config_t http_config{};
@@ -67,15 +67,7 @@ bool ota_update_with_host(const char* host) {
     esp_https_ota_config_t ota_config{};
     ota_config.http_config = &http_config;
 
-    const esp_err_t result = esp_https_ota(&ota_config);
-    if (result == ESP_OK) {
-        return true;
-    }
-
-    if (result != ESP_ERR_HTTP_CONNECT) {
-        ESP_LOGW(TAG, "OTA check failed for %s: %s", host, esp_err_to_name(result));
-    }
-    return false;
+    return esp_https_ota(&ota_config);
 }
 
 }  // namespace
@@ -92,10 +84,23 @@ void OtaUpdater::task_loop() {
 
         bool update_installed = false;
         for (std::uint32_t attempt = 0; attempt < MAXIMUM_UPDATE_ATTEMPTS; ++attempt) {
-            if (is_wifi_connected() && ota_update_with_host(request.server_address.data())) {
+            if (!is_wifi_connected()) {
+                ESP_LOGW(TAG, "OTA attempt %lu/%lu skipped: Wi-Fi disconnected",
+                         static_cast<unsigned long>(attempt + 1),
+                         static_cast<unsigned long>(MAXIMUM_UPDATE_ATTEMPTS));
+                vTaskDelay(RETRY_PERIOD);
+                continue;
+            }
+
+            const esp_err_t update_result = ota_update_with_host(request.server_address.data());
+            if (update_result == ESP_OK) {
                 update_installed = true;
                 break;
             }
+            ESP_LOGW(TAG, "OTA attempt %lu/%lu failed for %s: %s",
+                     static_cast<unsigned long>(attempt + 1),
+                     static_cast<unsigned long>(MAXIMUM_UPDATE_ATTEMPTS),
+                     request.server_address.data(), esp_err_to_name(update_result));
             vTaskDelay(RETRY_PERIOD);
         }
 

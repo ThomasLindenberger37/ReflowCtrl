@@ -9,7 +9,10 @@
 #include "components/temperature_acquisition.hpp"
 #include "driver/gpio.h"
 #include "esp_check.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_system.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "hardware/gpio_pins.hpp"
@@ -22,6 +25,7 @@
 namespace {
 
 constexpr TickType_t UPDATE_PERIOD = pdMS_TO_TICKS(10);
+constexpr std::uint32_t DIAGNOSTIC_INTERVAL_MS = 10'000;
 constexpr std::uint32_t BUTTON_DEBOUNCE_SAMPLE_COUNT = 4;
 constexpr char TAG[] = "reflowCtrl";
 
@@ -68,11 +72,31 @@ extern "C" void app_main() {
     ESP_ERROR_CHECK(temperature_acquisition.start());
     ESP_ERROR_CHECK(web_server.start());
     bus.publish(reflowCtrl::ControllerStarted{});
+    std::uint32_t last_diagnostic_ms = 0;
 
     while (true) {
         status_led.tick(10);
         button.tick();
         reflow.tick();
+        const std::uint32_t now_ms = static_cast<std::uint32_t>(esp_timer_get_time() / 1000);
+        if (now_ms - last_diagnostic_ms >= DIAGNOSTIC_INTERVAL_MS) {
+            last_diagnostic_ms = now_ms;
+            const reflowCtrl::ControllerTelemetry telemetry = reflow.telemetry();
+            if (telemetry.state == reflowCtrl::ReflowState::Running) {
+                ESP_LOGI(TAG,
+                         "Run health: elapsed=%lu s actual=%.1f C target=%.1f C relay=%s "
+                         "requested=%u%% active=%u%% heap=%lu min_heap=%lu main_stack=%u",
+                         static_cast<unsigned long>(telemetry.elapsed_ms / 1000),
+                         static_cast<double>(telemetry.actual_temperature_c),
+                         static_cast<double>(telemetry.target_temperature_c),
+                         telemetry.relay_enabled ? "on" : "off",
+                         reflowCtrl::heater_power_percent(telemetry.requested_power),
+                         reflowCtrl::heater_power_percent(telemetry.active_power),
+                         static_cast<unsigned long>(esp_get_free_heap_size()),
+                         static_cast<unsigned long>(esp_get_minimum_free_heap_size()),
+                         static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
+            }
+        }
         vTaskDelay(UPDATE_PERIOD);
     }
 }
