@@ -16,10 +16,12 @@ HeaterPower TemperatureController::update(const TemperatureControlInput& input) 
         power_ = HeaterPower::Off;
         return power_;
     }
+    const float lookahead_s = input.heating_requested        ? config_.active_heating_lookahead_s
+                              : input.heater_recently_active ? config_.thermal_coast_lookahead_s
+                                                             : config_.unheated_lookahead_s;
     const float projected_error =
-        input.target_temperature_c + input.target_ramp_c_per_s * config_.thermal_lookahead_s
-        - (input.actual_temperature_c
-           + std::max(0.0F, input.actual_ramp_c_per_s) * config_.thermal_lookahead_s);
+        input.target_temperature_c + input.target_ramp_c_per_s * lookahead_s
+        - (input.actual_temperature_c + std::max(0.0F, input.actual_ramp_c_per_s) * lookahead_s);
     if (projected_error < -config_.hysteresis_c) {
         power_ = HeaterPower::Off;
         return power_;
@@ -38,10 +40,6 @@ HeaterPower TemperatureController::update(const TemperatureControlInput& input) 
     const int correction = std::max(
         1, static_cast<int>(std::ceil(std::abs(error) / config_.error_per_feedback_step_c)));
     steps += error > 0.0F ? correction : -correction;
-    if (std::abs(input.target_ramp_c_per_s) <= config_.steady_target_ramp_c_per_s
-        && error < config_.large_steady_error_c) {
-        steps = std::min(steps, 2);
-    }
     power_ = from_steps(steps);
     return power_;
 }

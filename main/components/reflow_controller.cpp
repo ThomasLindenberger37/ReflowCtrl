@@ -11,6 +11,7 @@ namespace reflowCtrl {
 namespace {
 
 constexpr char TAG[] = "reflow";
+constexpr std::uint32_t RECENT_HEATING_WINDOW_MS = 90'000;
 
 struct TargetPoint {
     float temperature_c = 0.0F;
@@ -121,17 +122,31 @@ void ReflowController::start_process(const std::uint32_t time_ms) noexcept {
     profile_ = std::move(profile);
     oven_ = std::move(oven);
     curve_ = std::move(preview.points);
+    const auto peak_point =
+        std::find_if(curve_.begin(), curve_.end(), [&](const CurvePoint& point) {
+            return point.temperature_c >= profile_.peak_temperature_c;
+        });
+    peak_profile_time_s_ = peak_point == curve_.end() ? 0.0 : peak_point->time_s;
     temperature_controller_.reset();
     temperature_history_.reset();
     temperature_history_.add(time_ms, telemetry_.actual_temperature_c);
     relay_window_.start(time_ms);
     started_at_ms_ = time_ms;
     last_temperature_at_ms_ = time_ms;
+    profile_elapsed_ms_ = 0;
+    time_above_liquidus_ms_ = 0;
+    holding_for_liquidus_time_ = false;
+    peak_phase_started_ = false;
+    actual_peak_observed_ = false;
+    peak_temperature_reached_ = false;
+    heater_was_active_ = false;
+    last_heater_active_at_ms_ = time_ms;
     telemetry_.state = ReflowState::Running;
     telemetry_.elapsed_ms = 0;
     telemetry_.requested_power = HeaterPower::Off;
     telemetry_.active_power = HeaterPower::Off;
     telemetry_.relay_enabled = false;
+    telemetry_.peak_prompt_ready = false;
     ESP_LOGI(TAG, "Reflow started");
 }
 
@@ -154,12 +169,12 @@ void ReflowController::on_temperature_measured(const TemperatureMeasured& messag
         stop(ReflowState::Fault, time_ms);
         ESP_LOGE(TAG, "Safety fault: %s", safety_fault_name(fault));
     }
-    telemetry_.actual_temperature_c = message.temperature_celsius;
-    telemetry_.has_temperature = std::isfinite(message.temperature_celsius);
-    last_temperature_at_ms_ = time_ms;
     if (telemetry_.state == ReflowState::Running) {
         update_control(time_ms, message.temperature_celsius);
     }
+    telemetry_.actual_temperature_c = message.temperature_celsius;
+    telemetry_.has_temperature = std::isfinite(message.temperature_celsius);
+    last_temperature_at_ms_ = time_ms;
     unlock();
 }
 
@@ -167,23 +182,64 @@ void ReflowController::update_control(const std::uint32_t time_ms,
                                       const float temperature_c) noexcept {
     temperature_history_.add(time_ms, temperature_c);
     const float actual_ramp = temperature_history_.ramp_c_per_s();
+    if (telemetry_.relay_enabled) {
+        last_heater_active_at_ms_ = time_ms;
+        heater_was_active_ = true;
+    }
+    const bool heater_recently_active =
+        heater_was_active_ && time_ms - last_heater_active_at_ms_ < RECENT_HEATING_WINDOW_MS;
+
+    const std::uint32_t sample_duration_ms = time_ms - last_temperature_at_ms_;
+    if (telemetry_.has_temperature
+        && telemetry_.actual_temperature_c >= profile_.liquidus_temperature_c
+        && temperature_c >= profile_.liquidus_temperature_c) {
+        time_above_liquidus_ms_ += sample_duration_ms;
+    }
+    peak_temperature_reached_ =
+        peak_temperature_reached_
+        || temperature_c >= profile_.peak_temperature_c - DEFAULT_HYSTERESIS_C;
+    if (holding_for_liquidus_time_) {
+        if (time_above_liquidus_ms_ >= profile_.time_above_liquidus_s * 1000.0
+            && peak_temperature_reached_) {
+            holding_for_liquidus_time_ = false;
+        }
+    } else {
+        profile_elapsed_ms_ += sample_duration_ms;
+    }
 
     telemetry_.elapsed_ms = time_ms - started_at_ms_;
-    const double elapsed_s = static_cast<double>(telemetry_.elapsed_ms) / 1000.0;
+    double elapsed_s = static_cast<double>(profile_elapsed_ms_) / 1000.0;
+    const bool liquidus_time_reached =
+        time_above_liquidus_ms_ >= profile_.time_above_liquidus_s * 1000.0;
+    if (!holding_for_liquidus_time_ && elapsed_s >= peak_profile_time_s_
+        && (!liquidus_time_reached || !peak_temperature_reached_)) {
+        holding_for_liquidus_time_ = true;
+        profile_elapsed_ms_ = static_cast<std::uint32_t>(peak_profile_time_s_ * 1000.0);
+        elapsed_s = static_cast<double>(profile_elapsed_ms_) / 1000.0;
+    }
+    peak_phase_started_ = peak_phase_started_ || elapsed_s >= peak_profile_time_s_;
+    if (peak_phase_started_ && actual_ramp <= 0.0F
+        && temperature_c >= profile_.liquidus_temperature_c) {
+        actual_peak_observed_ = true;
+    }
+    telemetry_.peak_prompt_ready = actual_peak_observed_ && liquidus_time_reached;
     if (elapsed_s >= curve_.back().time_s) {
         stop(ReflowState::Completed, time_ms);
         ESP_LOGI(TAG, "Reflow completed");
         return;
     }
-    const TargetPoint target = target_at(curve_, elapsed_s);
+    const TargetPoint target =
+        holding_for_liquidus_time_
+            ? TargetPoint{static_cast<float>(profile_.peak_temperature_c), 0.0F}
+            : target_at(curve_, elapsed_s);
     telemetry_.target_temperature_c = target.temperature_c;
     telemetry_.target_ramp_c_per_s = target.ramp_c_per_s;
     telemetry_.actual_ramp_c_per_s = actual_ramp;
     telemetry_.temperature_error_c = target.temperature_c - temperature_c;
     telemetry_.requested_power = temperature_controller_.update(
         {target.temperature_c, temperature_c, target.ramp_c_per_s, actual_ramp,
-         heating_rate_at(oven_, temperature_c,
-                         static_cast<float>(profile_.max_ramp_rate_c_per_s))});
+         heating_rate_at(oven_, temperature_c, static_cast<float>(profile_.max_ramp_rate_c_per_s)),
+         telemetry_.requested_power != HeaterPower::Off, heater_recently_active});
     relay_window_.request(telemetry_.requested_power);
     apply_relay(relay_window_.update(time_ms));
     telemetry_.active_power = relay_window_.active_power();

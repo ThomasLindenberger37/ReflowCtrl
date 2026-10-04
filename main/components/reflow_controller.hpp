@@ -31,6 +31,7 @@ struct ControllerTelemetry {
     bool has_temperature = false;
     std::uint32_t elapsed_ms = 0;
     std::uint32_t window_progress_ms = 0;
+    bool peak_prompt_ready = false;
 };
 
 class ReflowController {
@@ -69,6 +70,15 @@ class ReflowController {
     SemaphoreHandle_t mutex_ = nullptr;
     std::uint32_t started_at_ms_ = 0;
     std::uint32_t last_temperature_at_ms_ = 0;
+    std::uint32_t profile_elapsed_ms_ = 0;
+    std::uint32_t time_above_liquidus_ms_ = 0;
+    bool holding_for_liquidus_time_ = false;
+    bool peak_phase_started_ = false;
+    bool actual_peak_observed_ = false;
+    bool peak_temperature_reached_ = false;
+    double peak_profile_time_s_ = 0.0;
+    std::uint32_t last_heater_active_at_ms_ = 0;
+    bool heater_was_active_ = false;
 };
 
 [[nodiscard]] const char* reflow_state_name(ReflowState state) noexcept;

@@ -15,7 +15,7 @@
   <link rel="stylesheet" href="/style.css">
   <script src="/chart.umd.min.js?v=4.5.1" defer></script>
   <script src="/characterization-analyzer.js?v=embedded-api-1" defer></script>
-  <script src="/app.js?v=embedded-api-1" defer></script>
+  <script src="/app.js?v=embedded-api-2" defer></script>
 </head>
 
 <body>
@@ -359,6 +359,25 @@
               id="profileSave" class="button button-primary" type="submit" disabled>Save Profile</button></div>
         </footer>
       </form>
+    </section>
+  </div>
+
+  <div id="peakPromptBackdrop" class="profile-modal-backdrop peak-prompt-backdrop" hidden>
+    <section class="profile-modal peak-prompt-modal" role="dialog" aria-modal="true"
+      aria-labelledby="peakPromptTitle" aria-describedby="peakPromptMessage">
+      <header class="profile-modal-header">
+        <div>
+          <p class="eyebrow">REFLOW PEAK REACHED</p>
+          <h2 id="peakPromptTitle">Open the oven door</h2>
+        </div>
+      </header>
+      <div class="peak-prompt-content">
+        <p id="peakPromptMessage">The measured peak and required time above liquidus are complete. Open the oven door now to speed up cooling. A short browser tone will play.</p>
+        <div class="peak-prompt-actions">
+          <button id="peakPromptReplaySound" class="button button-secondary" type="button">Play sound again</button>
+          <button id="peakPromptClose" class="button button-primary" type="button">I opened the door</button>
+        </div>
+      </div>
     </section>
   </div>
 

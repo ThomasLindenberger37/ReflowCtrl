@@ -120,6 +120,26 @@ TEST(TemperatureController, ProjectedOvershootTurnsHeatingOffBeforeTheTarget) {
     EXPECT_EQ(controller.update({180.0F, 175.0F, 0.5F, 1.7F, 1.0F}), HeaterPower::Off);
 }
 
+TEST(TemperatureController, PredictsThermalCoastAtAStableTarget) {
+    TemperatureController controller;
+    EXPECT_EQ(controller.update({150.0F, 145.0F, 0.0F, 0.3F, 1.0F, false, true}), HeaterPower::Off);
+}
+
+TEST(TemperatureController, UsesDifferentPredictionForHeatingAndThermalCoast) {
+    TemperatureController heated_controller;
+    TemperatureController coasting_controller;
+    const TemperatureControlInput heated{150.0F, 146.0F, 0.0F, 0.2F, 1.0F, true, true};
+    const TemperatureControlInput coasting{150.0F, 146.0F, 0.0F, 0.2F, 1.0F, false, true};
+
+    EXPECT_EQ(heated_controller.update(heated), HeaterPower::P25);
+    EXPECT_EQ(coasting_controller.update(coasting), HeaterPower::Off);
+}
+
+TEST(TemperatureController, RaisesSteadyPowerForALargeTemperatureDeficit) {
+    TemperatureController controller;
+    EXPECT_EQ(controller.update({190.0F, 175.0F, 0.0F, 0.0F, 1.0F, true, true}), HeaterPower::P75);
+}
+
 TEST(TemperatureHistory, UsesSmoothedHistoryForRamp) {
     TemperatureHistory history;
     history.add(0, 100.0F);

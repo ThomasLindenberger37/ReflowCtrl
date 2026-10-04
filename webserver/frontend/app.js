@@ -34,7 +34,14 @@ let profilePreviewAbortController;
 let reflowSamples = [];
 let reflowRecording = false;
 let lastRecordedReflowSecond = null;
+let peakPromptShown = false;
+let peakAlertAudioContext;
 const availableProfiles = new Map();
+const peakPrompt = {
+  backdrop: document.querySelector("#peakPromptBackdrop"),
+  close: document.querySelector("#peakPromptClose"),
+  replaySound: document.querySelector("#peakPromptReplaySound")
+};
 
 async function apiRequest(path, options = {}) {
   const response = await fetch(`${API}${path}`, { headers: { "Content-Type": "application/json" }, ...options });
@@ -73,6 +80,10 @@ function updateStatus(status) {
   ui.stateBadge.querySelector("b").textContent = stateLabels[state].toUpperCase();
 
   const active = ["preheat", "soak", "reflow", "cooling"].includes(state);
+  if (active && status.peak_prompt_ready === true && !peakPromptShown) {
+    peakPromptShown = true;
+    openPeakPrompt();
+  }
   captureReflowSample(status, active);
   lastControllerStatus = status;
   const temperatureLocked = status.temperature > SAFE_START_TEMPERATURE;
@@ -180,6 +191,53 @@ function showToast(message, isError = false) {
   ui.toast.textContent = message;
   ui.toast.className = `toast show${isError ? " error" : ""}`;
   toastTimer = setTimeout(() => { ui.toast.className = "toast"; }, 2800);
+}
+
+function preparePeakAlertAudio() {
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+    peakAlertAudioContext ??= new AudioContextClass();
+    if (peakAlertAudioContext.state === "suspended") {
+      void peakAlertAudioContext.resume().catch(() => {});
+    }
+  } catch {
+    peakAlertAudioContext = undefined;
+  }
+}
+
+function playPeakAlertSound() {
+  if (!peakAlertAudioContext) return;
+  void peakAlertAudioContext.resume().then(() => {
+    const startTime = peakAlertAudioContext.currentTime;
+    [0, 0.32, 0.64].forEach(offset => {
+      const oscillator = peakAlertAudioContext.createOscillator();
+      const gain = peakAlertAudioContext.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.value = 880;
+      gain.gain.setValueAtTime(0.0001, startTime + offset);
+      gain.gain.exponentialRampToValueAtTime(0.18, startTime + offset + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startTime + offset + 0.18);
+      oscillator.connect(gain);
+      gain.connect(peakAlertAudioContext.destination);
+      oscillator.start(startTime + offset);
+      oscillator.stop(startTime + offset + 0.2);
+    });
+  }).catch(() => {});
+}
+
+function openPeakPrompt() {
+  peakPrompt.backdrop.hidden = false;
+  document.body.classList.add("modal-open");
+  playPeakAlertSound();
+  peakPrompt.close.focus();
+}
+
+function closePeakPrompt() {
+  peakPrompt.backdrop.hidden = true;
+  if (profileUi.backdrop.hidden && settings.backdrop.hidden && characterization.backdrop.hidden) {
+    document.body.classList.remove("modal-open");
+  }
 }
 
 const debug = {
@@ -499,6 +557,9 @@ async function pollStatus() {
 }
 
 async function startProcess() {
+  peakPromptShown = false;
+  closePeakPrompt();
+  preparePeakAlertAudio();
   ui.start.disabled = true;
   try {
     const status = await apiRequest("/start", { method: "POST" });
@@ -943,6 +1004,8 @@ async function saveSettings(event) {
 function initialize() {
   if (typeof Chart !== "undefined") createChart();
   ui.start.addEventListener("click", startProcess);
+  peakPrompt.close.addEventListener("click", closePeakPrompt);
+  peakPrompt.replaySound.addEventListener("click", playPeakAlertSound);
   ui.stop.addEventListener("click", stopProcess);
   ui.reflowCsvDownload.addEventListener("click", downloadReflowCsv);
   debug.toggle.addEventListener("click", toggleDebug); debug.clear.addEventListener("click", clearDebugOutput);

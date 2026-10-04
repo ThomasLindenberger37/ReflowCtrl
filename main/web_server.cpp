@@ -93,7 +93,7 @@ esp_err_t send_status(httpd_req_t* request) {
         "\"heater\":%s,\"elapsed_seconds\":%lu,\"temperature_error\":%.2f,"
         "\"target_ramp_rate\":%.3f,\"actual_ramp_rate\":%.3f,"
         "\"requested_heater_power\":%u,\"active_heater_power\":%u,"
-        "\"relay_state\":%s,\"window_progress_seconds\":%.2f}",
+        "\"relay_state\":%s,\"window_progress_seconds\":%.2f,\"peak_prompt_ready\":%s}",
         reflow_state_name(telemetry.state), static_cast<double>(telemetry.actual_temperature_c),
         static_cast<double>(telemetry.target_temperature_c),
         telemetry.relay_enabled ? "true" : "false",
@@ -103,7 +103,8 @@ esp_err_t send_status(httpd_req_t* request) {
         static_cast<double>(telemetry.actual_ramp_c_per_s),
         heater_power_percent(telemetry.requested_power),
         heater_power_percent(telemetry.active_power), telemetry.relay_enabled ? "true" : "false",
-        static_cast<double>(telemetry.window_progress_ms) / 1000.0);
+        static_cast<double>(telemetry.window_progress_ms) / 1000.0,
+        telemetry.peak_prompt_ready ? "true" : "false");
     httpd_resp_set_type(request, "application/json");
     return httpd_resp_sendstr(request, response);
 }

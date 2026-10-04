@@ -12,9 +12,9 @@ enum class HeaterPower : std::uint8_t { Off = 0, P25 = 25, P50 = 50, P75 = 75, P
 struct TemperatureControllerConfig {
     float hysteresis_c = DEFAULT_HYSTERESIS_C;
     float error_per_feedback_step_c = 5.0F;
-    float steady_target_ramp_c_per_s = 0.1F;
-    float large_steady_error_c = 20.0F;
-    float thermal_lookahead_s = 6.0F;
+    float unheated_lookahead_s = 6.0F;
+    float active_heating_lookahead_s = 30.0F;
+    float thermal_coast_lookahead_s = 60.0F;
 };
 
 struct TemperatureControlInput {
@@ -23,6 +23,8 @@ struct TemperatureControlInput {
     float target_ramp_c_per_s = 0.0F;
     float actual_ramp_c_per_s = 0.0F;
     float characterized_heating_rate_c_per_s = 0.0F;
+    bool heating_requested = false;
+    bool heater_recently_active = false;
 };
 
 class TemperatureController {
