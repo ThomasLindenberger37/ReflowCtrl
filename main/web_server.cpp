@@ -14,6 +14,9 @@
 #include "esp_log.h"
 #include "esp_log_write.h"
 #include "esp_netif.h"
+#include "esp_random.h"
+#include "esp_system.h"
+#include "esp_timer.h"
 #include "firmware_version.hpp"
 #include "ipv4_address.hpp"
 #include "log_buffer.hpp"
@@ -43,6 +46,36 @@ constexpr std::size_t SERVER_ADDRESS_SIZE = 16;
 constexpr std::size_t LOG_FORMAT_BUFFER_SIZE = 256;
 LogBuffer log_buffer;
 vprintf_like_t uart_vprintf = nullptr;
+
+std::uint32_t boot_id() {
+    static const std::uint32_t id = esp_random();
+    return id;
+}
+
+const char* reset_reason_name() {
+    switch (esp_reset_reason()) {
+        case ESP_RST_POWERON:
+            return "Power on";
+        case ESP_RST_SW:
+            return "Software restart";
+        case ESP_RST_PANIC:
+            return "Firmware panic";
+        case ESP_RST_INT_WDT:
+            return "Interrupt watchdog";
+        case ESP_RST_TASK_WDT:
+            return "Task watchdog";
+        case ESP_RST_WDT:
+            return "Watchdog";
+        case ESP_RST_BROWNOUT:
+            return "Supply voltage brownout";
+        case ESP_RST_PWR_GLITCH:
+            return "Power glitch";
+        case ESP_RST_CPU_LOCKUP:
+            return "CPU lockup";
+        default:
+            return "Other reset";
+    }
+}
 
 struct WebAsset {
     const char* begin;
@@ -97,6 +130,7 @@ esp_err_t send_status(httpd_req_t* request) {
         "\"target_ramp_rate\":%.3f,\"actual_ramp_rate\":%.3f,"
         "\"requested_heater_power\":%u,\"active_heater_power\":%u,"
         "\"relay_state\":%s,\"window_progress_seconds\":%.2f,\"peak_prompt_ready\":%s,"
+        "\"boot_id\":%lu,\"uptime_seconds\":%llu,\"reset_reason\":\"%s\","
         "\"version\":\"",
         reflow_state_name(telemetry.state), static_cast<double>(telemetry.actual_temperature_c),
         static_cast<double>(telemetry.target_temperature_c),
@@ -108,7 +142,8 @@ esp_err_t send_status(httpd_req_t* request) {
         heater_power_percent(telemetry.requested_power),
         heater_power_percent(telemetry.active_power), telemetry.relay_enabled ? "true" : "false",
         static_cast<double>(telemetry.window_progress_ms) / 1000.0,
-        telemetry.peak_prompt_ready ? "true" : "false");
+        telemetry.peak_prompt_ready ? "true" : "false", static_cast<unsigned long>(boot_id()),
+        static_cast<unsigned long long>(esp_timer_get_time() / 1'000'000), reset_reason_name());
     if (written < 0 || static_cast<std::size_t>(written) >= sizeof(response)) {
         return httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR,
                                    "Could not format controller status");
@@ -304,6 +339,8 @@ esp_err_t send_characterization_preview(httpd_req_t* request) {
 
 esp_err_t WebServer::start() {
     uart_vprintf = esp_log_set_vprintf(&capture_log);
+    ESP_LOGI(TAG, "Boot %lu: %s; firmware %s", static_cast<unsigned long>(boot_id()),
+             reset_reason_name(), FIRMWARE_VERSION);
     ESP_RETURN_ON_ERROR(mdns_init(), TAG, "Failed to initialize mDNS");
     ESP_RETURN_ON_ERROR(mdns_hostname_set(HOSTNAME), TAG, "Failed to set mDNS hostname");
     ESP_RETURN_ON_ERROR(mdns_instance_name_set("ReflowCtrl"), TAG,

@@ -1,6 +1,7 @@
 #include "log_buffer.hpp"
 
 #include <string>
+#include <thread>
 
 #include "gtest/gtest.h"
 
@@ -51,6 +52,37 @@ TEST(LogBufferTest, CursorAdvancesOnlyPastReturnedPage) {
     const auto second = buffer.after(first.next_cursor);
     ASSERT_EQ(second.count, 1U);
     EXPECT_EQ(second.entries[0].id, LogBuffer::SNAPSHOT_SIZE + 1);
+}
+
+TEST(LogBufferTest, ConcurrentWritersAndReaderKeepCompleteEntries) {
+    LogBuffer buffer;
+    constexpr std::size_t entries_per_writer = 1000;
+    const auto write_entries = [&buffer](const char* text) {
+        for (std::size_t index = 0; index < entries_per_writer; ++index) {
+            buffer.append(text);
+        }
+    };
+    std::thread first(write_entries, "first");
+    std::thread second(write_entries, "second");
+    std::uint32_t cursor = 0;
+    for (std::size_t index = 0; index < entries_per_writer; ++index) {
+        const auto snapshot = buffer.after(cursor);
+        for (std::size_t entry_index = 0; entry_index < snapshot.count; ++entry_index) {
+            const auto& entry = snapshot.entries[entry_index];
+            EXPECT_GT(entry.id, cursor);
+            const std::string text(entry.text.data());
+            EXPECT_TRUE(text == "first" || text == "second");
+            cursor = entry.id;
+        }
+    }
+    first.join();
+    second.join();
+    auto snapshot = buffer.after(cursor);
+    while (snapshot.count > 0) {
+        cursor = snapshot.next_cursor;
+        snapshot = buffer.after(cursor);
+    }
+    EXPECT_EQ(cursor, 2 * entries_per_writer);
 }
 
 }  // namespace

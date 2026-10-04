@@ -33,7 +33,6 @@ class TemperatureAcquisition {
     GaussianTemperatureFilter filter_;
     TaskHandle_t task_handle_ = nullptr;
     bool sensor_failed_ = false;
-    std::uint32_t successful_sample_count_ = 0;
 };
 
 }  // namespace reflowCtrl

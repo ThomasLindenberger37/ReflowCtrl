@@ -8,7 +8,6 @@ namespace {
 
 constexpr char TAG[] = "temperature";
 constexpr TickType_t SAMPLE_PERIOD = pdMS_TO_TICKS(200);
-constexpr std::uint32_t SAMPLES_PER_LOG = 4;
 constexpr std::uint32_t TASK_STACK_SIZE = 4096;
 constexpr UBaseType_t TASK_PRIORITY = 5;
 
@@ -61,11 +60,6 @@ void TemperatureAcquisition::acquire_sample() noexcept {
     filter_.add_sample(raw_temperature_celsius);
     const float filtered_temperature_celsius = filter_.filtered_temperature();
     publish_temperature(filtered_temperature_celsius);
-
-    ++successful_sample_count_;
-    if (successful_sample_count_ % SAMPLES_PER_LOG == 0) {
-        ESP_LOGI(TAG, "Temperature: %.2f C", static_cast<double>(filtered_temperature_celsius));
-    }
 }
 
 void TemperatureAcquisition::publish_temperature(const float temperature_celsius) noexcept {

@@ -25,6 +25,7 @@ let toastTimer;
 let debugCursor = 0;
 let debugLineCount = 0;
 let lastControllerStatus = null;
+let interruptedReflowReason = null;
 let profilePreviewChart;
 let activeProfileId = "";
 let editedProfileId = "";
@@ -75,6 +76,16 @@ function statusIsValid(status) {
 }
 
 function updateStatus(status) {
+  const restarted = lastControllerStatus !== null &&
+    Number.isInteger(lastControllerStatus.boot_id) && Number.isInteger(status.boot_id) &&
+    lastControllerStatus.boot_id !== status.boot_id;
+  if (restarted) {
+    debugCursor = 0;
+    if (reflowRecording) {
+      interruptedReflowReason = status.reset_reason || "Unknown reset";
+      showToast(`Reflow interrupted: controller restarted (${interruptedReflowReason})`, true);
+    }
+  }
   const state = stateLabels[status.state] ? status.state : "error";
   ui.version.textContent = typeof status.version === "string" ? status.version : "";
   ui.temperature.textContent = Number(status.temperature).toFixed(1);
@@ -105,14 +116,19 @@ function updateStatus(status) {
   profileUi.edit.disabled = active || !profileUi.select.value;
   ui.processTitle.textContent = active ? `${stateLabels[state]} in progress` : temperatureLocked ? "Oven cooling down" : state === "complete" ? "Profile complete" : "Ready for a new process";
   ui.processNote.textContent = active ? `Process time ${formatTime(status.elapsed_seconds)} · Automatic temperature control active` : temperatureLocked ? `Start is locked until the oven reaches ${SAFE_START_TEMPERATURE.toFixed(1)} °C or below.` : state === "complete" ? "The oven has cooled to a safe starting temperature." : "Start the profile to begin the reflow process.";
+  if (interruptedReflowReason && !active) {
+    ui.processTitle.textContent = "Reflow interrupted by controller restart";
+    ui.processNote.textContent = `${interruptedReflowReason}. Heater is off. Download the recorded CSV before starting a new run.`;
+  }
 
-  if (lastElapsed !== status.elapsed_seconds) {
+  if (active && lastElapsed !== status.elapsed_seconds) {
     addChartPoint(status);
     lastElapsed = status.elapsed_seconds;
   }
 }
 
 function beginReflowRecording(version = lastControllerStatus?.version) {
+  interruptedReflowReason = null;
   reflowSamples = [];
   reflowFirmwareVersion = typeof version === "string" ? version : "unknown";
   reflowRecording = true;
