@@ -19,7 +19,7 @@ namespace {
 
 constexpr char TAG[] = "ota_updater";
 constexpr TickType_t RETRY_PERIOD = pdMS_TO_TICKS(1000);
-constexpr TickType_t CONFIRM_RETRY_PERIOD = pdMS_TO_TICKS(1000);
+constexpr std::uint32_t MAXIMUM_UPDATE_ATTEMPTS = 5;
 constexpr uint32_t TASK_STACK_SIZE = 8192;
 constexpr UBaseType_t TASK_PRIORITY = configMAX_PRIORITIES - 1;
 constexpr std::size_t SERVER_ADDRESS_SIZE = 16;
@@ -90,14 +90,25 @@ void OtaUpdater::task_loop() {
         xQueueReceive(static_cast<QueueHandle_t>(request_queue_), &request, portMAX_DELAY);
         ESP_LOGI(TAG, "OTA update requested from %s", request.server_address.data());
 
-        while (!is_wifi_connected() || !ota_update_with_host(request.server_address.data())) {
+        bool update_installed = false;
+        for (std::uint32_t attempt = 0; attempt < MAXIMUM_UPDATE_ATTEMPTS; ++attempt) {
+            if (is_wifi_connected() && ota_update_with_host(request.server_address.data())) {
+                update_installed = true;
+                break;
+            }
             vTaskDelay(RETRY_PERIOD);
         }
 
+        if (!update_installed) {
+            ESP_LOGE(TAG, "OTA failed after %lu attempts for %s; waiting for a new request",
+                     static_cast<unsigned long>(MAXIMUM_UPDATE_ATTEMPTS),
+                     request.server_address.data());
+            continue;
+        }
+
         ESP_LOGI(TAG, "Firmware image installed; confirming download to server");
-        while (!confirm_update_with_host(request.server_address.data())) {
-            ESP_LOGW(TAG, "Could not confirm update; retrying");
-            vTaskDelay(CONFIRM_RETRY_PERIOD);
+        if (!confirm_update_with_host(request.server_address.data())) {
+            ESP_LOGW(TAG, "Could not confirm update to server; restarting with installed image");
         }
 
         ESP_LOGI(TAG, "Update confirmed; restarting");
