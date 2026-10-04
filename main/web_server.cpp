@@ -14,6 +14,7 @@
 #include "esp_log.h"
 #include "esp_log_write.h"
 #include "esp_netif.h"
+#include "firmware_version.hpp"
 #include "ipv4_address.hpp"
 #include "log_buffer.hpp"
 #include "mdns.h"
@@ -48,6 +49,8 @@ struct WebAsset {
     const char* end;
     const char* content_type;
 };
+
+void append_json_escaped(char*& output, std::size_t& remaining, const char* text);
 
 int capture_log(const char* format, va_list arguments) {
     va_list uart_arguments;
@@ -86,14 +89,15 @@ esp_err_t send_asset(httpd_req_t* request) {
 esp_err_t send_status(httpd_req_t* request) {
     auto* server = static_cast<WebServer*>(request->user_ctx);
     const ControllerTelemetry telemetry = server->controller_telemetry();
-    char response[512]{};
-    std::snprintf(
+    char response[1024]{};
+    const int written = std::snprintf(
         response, sizeof(response),
         "{\"state\":\"%s\",\"temperature\":%.2f,\"target_temperature\":%.2f,"
         "\"heater\":%s,\"elapsed_seconds\":%lu,\"temperature_error\":%.2f,"
         "\"target_ramp_rate\":%.3f,\"actual_ramp_rate\":%.3f,"
         "\"requested_heater_power\":%u,\"active_heater_power\":%u,"
-        "\"relay_state\":%s,\"window_progress_seconds\":%.2f,\"peak_prompt_ready\":%s}",
+        "\"relay_state\":%s,\"window_progress_seconds\":%.2f,\"peak_prompt_ready\":%s,"
+        "\"version\":\"",
         reflow_state_name(telemetry.state), static_cast<double>(telemetry.actual_temperature_c),
         static_cast<double>(telemetry.target_temperature_c),
         telemetry.relay_enabled ? "true" : "false",
@@ -105,6 +109,20 @@ esp_err_t send_status(httpd_req_t* request) {
         heater_power_percent(telemetry.active_power), telemetry.relay_enabled ? "true" : "false",
         static_cast<double>(telemetry.window_progress_ms) / 1000.0,
         telemetry.peak_prompt_ready ? "true" : "false");
+    if (written < 0 || static_cast<std::size_t>(written) >= sizeof(response)) {
+        return httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "Could not format controller status");
+    }
+    char* output = response + written;
+    std::size_t remaining = sizeof(response) - static_cast<std::size_t>(written);
+    append_json_escaped(output, remaining, FIRMWARE_VERSION);
+    if (remaining < 3) {
+        return httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "Firmware version is too long");
+    }
+    *output++ = '"';
+    *output++ = '}';
+    *output = '\0';
     httpd_resp_set_type(request, "application/json");
     return httpd_resp_sendstr(request, response);
 }

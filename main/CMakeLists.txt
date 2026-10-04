@@ -1,3 +1,8 @@
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
+set(GENERATED_DIR "${CMAKE_BINARY_DIR}/generated")
+file(MAKE_DIRECTORY "${GENERATED_DIR}")
+
 idf_component_register(
     SRCS
         "main.cpp"
@@ -26,7 +31,7 @@ idf_component_register(
         "ota_updater.cpp"
         "web_server.cpp"
         "wifi_station.cpp"
-    INCLUDE_DIRS "."
+    INCLUDE_DIRS "." "${GENERATED_DIR}"
     EMBED_TXTFILES
         "../webserver/frontend/index.html"
         "../webserver/frontend/style.css"
@@ -48,7 +53,16 @@ idf_component_register(
         nvs_flash
 )
 
-find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_custom_target(
+    generate_firmware_version
+    COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/generate_version.py"
+            --output "${GENERATED_DIR}/firmware_version.hpp"
+    BYPRODUCTS "${GENERATED_DIR}/firmware_version.hpp"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    VERBATIM
+)
+add_dependencies(${COMPONENT_LIB} generate_firmware_version)
+
 add_custom_target(
     message_bus_subscription_check ALL
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/analyze_message_bus_subscriptions.py

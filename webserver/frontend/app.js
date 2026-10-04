@@ -14,7 +14,8 @@ const ui = {
   start: document.querySelector("#startButton"), stop: document.querySelector("#stopButton"),
   reflowCsvDownload: document.querySelector("#reflowCsvDownload"),
   connectionDot: document.querySelector("#connectionDot"), connectionText: document.querySelector("#connectionText"),
-  apiStatus: document.querySelector("#apiStatus"), processTitle: document.querySelector("#processTitle"),
+  apiStatus: document.querySelector("#apiStatus"), version: document.querySelector("#firmwareVersion"),
+  processTitle: document.querySelector("#processTitle"),
   processNote: document.querySelector("#processNote"), toast: document.querySelector("#toast")
 };
 
@@ -69,6 +70,7 @@ function statusIsValid(status) {
 
 function updateStatus(status) {
   const state = stateLabels[status.state] ? status.state : "error";
+  ui.version.textContent = typeof status.version === "string" ? status.version : "";
   ui.temperature.textContent = Number(status.temperature).toFixed(1);
   ui.target.textContent = Number(status.target_temperature).toFixed(1);
   ui.temperatureBar.style.width = `${Math.min(100, Math.max(0, status.temperature / 250 * 100))}%`;
