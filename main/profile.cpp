@@ -9,7 +9,6 @@
 namespace reflowCtrl {
 namespace {
 
-constexpr double AMBIENT_TEMPERATURE_C = 25.0;
 constexpr double WARNING_MARGIN = 0.9;
 constexpr std::size_t MAXIMUM_PREVIEW_POINTS = 160;
 constexpr std::size_t PROFILE_SEGMENT_COUNT = 6;
@@ -180,13 +179,13 @@ std::vector<ValidationIssue> validate_profile(const ProfileConfiguration& profil
     positive(profile.time_above_liquidus_s, "reflow.time_above_liquidus_s", "Time above liquidus");
     positive(profile.max_cooling_rate_c_per_s, "cooling.max_cooling_rate_c_per_s",
              "Maximum cooling rate");
-    if (profile.soak_start_temperature_c <= AMBIENT_TEMPERATURE_C
+    if (profile.soak_start_temperature_c <= PROFILE_START_TEMPERATURE_C
         || profile.soak_end_temperature_c <= profile.soak_start_temperature_c
         || profile.liquidus_temperature_c <= profile.soak_end_temperature_c
         || profile.peak_temperature_c <= profile.liquidus_temperature_c
         || profile.peak_temperature_c > 350.0) {
         issue(issues, ValidationSeverity::Error, "temperature_order",
-              "Temperatures must satisfy ambient < soak start < soak end < liquidus < peak ≤ 350 "
+              "Temperatures must satisfy 50 °C < soak start < soak end < liquidus < peak ≤ 350 "
               "°C.");
     }
     if (profile.max_ramp_rate_c_per_s > 0.0 && profile.max_cooling_rate_c_per_s > 0.0
@@ -229,7 +228,7 @@ ProfilePreview generate_profile_preview(const ProfileConfiguration& profile,
         return result;
     }
     double time = 0.0;
-    const double ambient = oven ? oven->ambient_temperature_c : AMBIENT_TEMPERATURE_C;
+    constexpr double ambient = PROFILE_START_TEMPERATURE_C;
     const double ramp_up_duration =
         (profile.soak_start_temperature_c - ambient) / profile.max_ramp_rate_c_per_s;
     const double ramp_to_reflow_duration =

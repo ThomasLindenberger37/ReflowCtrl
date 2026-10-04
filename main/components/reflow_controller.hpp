@@ -76,6 +76,7 @@ class ReflowController {
     bool peak_phase_started_ = false;
     bool actual_peak_observed_ = false;
     bool peak_temperature_reached_ = false;
+    bool preheating_to_profile_start_ = false;
     double peak_profile_time_s_ = 0.0;
     std::uint32_t last_heater_active_at_ms_ = 0;
     bool heater_was_active_ = false;

@@ -139,6 +139,29 @@ TEST(ProfileCurve, GeneratesConsistentPhasesAndTimeAboveLiquidus) {
     EXPECT_NEAR(last_above->time_s - first_above->time_s, profile.time_above_liquidus_s, 1.0);
 }
 
+TEST(ProfileCurve, StartsAtFiftyDegreesAndNeverRequestsLess) {
+    const auto profile = default_profile_collection().profiles[0].configuration;
+    const auto preview = generate_profile_preview(profile, std::nullopt);
+
+    ASSERT_TRUE(preview.valid);
+    ASSERT_FALSE(preview.points.empty());
+    EXPECT_DOUBLE_EQ(preview.points.front().temperature_c, PROFILE_START_TEMPERATURE_C);
+    EXPECT_TRUE(std::all_of(preview.points.begin(), preview.points.end(), [](const auto& point) {
+        return point.temperature_c >= PROFILE_START_TEMPERATURE_C;
+    }));
+}
+
+TEST(ProfileValidation, RejectsSoakStartAtOrBelowMinimumControlTemperature) {
+    auto profile = default_profile_collection().profiles[0].configuration;
+    profile.soak_start_temperature_c = PROFILE_START_TEMPERATURE_C;
+
+    const auto issues = validate_profile(profile, std::nullopt);
+
+    EXPECT_TRUE(std::any_of(issues.begin(), issues.end(), [](const auto& issue) {
+        return issue.severity == ValidationSeverity::Error && issue.field == "temperature_order";
+    }));
+}
+
 TEST(ProfileCurve, ExistingSnapshotDoesNotChangeWhenProfileIsEdited) {
     auto profile = default_profile_collection().profiles[0].configuration;
     const auto running_snapshot = generate_profile_preview(profile, std::nullopt);

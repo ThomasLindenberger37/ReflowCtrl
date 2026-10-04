@@ -10,6 +10,9 @@
 
 namespace reflowCtrl {
 
+inline constexpr double PROFILE_START_TEMPERATURE_C = 50.0;
+inline constexpr double FULL_POWER_PREHEAT_LIMIT_C = 40.0;
+
 enum class ProfileType : std::uint8_t { BuiltIn, Custom };
 enum class ValidationSeverity : std::uint8_t { Warning, Error };
 enum class ProfileMutationResult : std::uint8_t { Success, NotFound, NotAllowed };

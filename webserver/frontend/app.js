@@ -33,6 +33,7 @@ let profilePreviewRequest = 0;
 let profilePreviewTimer;
 let profilePreviewAbortController;
 let reflowSamples = [];
+let reflowFirmwareVersion = "unknown";
 let reflowRecording = false;
 let lastRecordedReflowSecond = null;
 let peakPromptShown = false;
@@ -57,6 +58,11 @@ function formatTime(seconds) {
   const minutes = Math.floor(seconds / 60).toString().padStart(2, "0");
   const rest = (seconds % 60).toString().padStart(2, "0");
   return `${minutes}:${rest}`;
+}
+
+function safeFilenamePart(value) {
+  const safe = String(value ?? "").trim().replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  return safe || "unknown";
 }
 
 function statusIsValid(status) {
@@ -106,8 +112,9 @@ function updateStatus(status) {
   }
 }
 
-function beginReflowRecording() {
+function beginReflowRecording(version = lastControllerStatus?.version) {
   reflowSamples = [];
+  reflowFirmwareVersion = typeof version === "string" ? version : "unknown";
   reflowRecording = true;
   lastRecordedReflowSecond = null;
   ui.reflowCsvDownload.disabled = true;
@@ -115,7 +122,7 @@ function beginReflowRecording() {
 
 function captureReflowSample(status, active) {
   if (active && (!reflowRecording || (lastRecordedReflowSecond !== null && status.elapsed_seconds < lastRecordedReflowSecond))) {
-    beginReflowRecording();
+    beginReflowRecording(status.version);
   }
   if (active && status.elapsed_seconds !== lastRecordedReflowSecond) {
     reflowSamples.push({
@@ -139,8 +146,9 @@ function downloadReflowCsv() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   const timestamp = new Date().toISOString().replaceAll(":", "-").replace(".000Z", "Z");
+  const version = safeFilenamePart(reflowFirmwareVersion);
   link.href = url;
-  link.download = `reflow-${timestamp}.csv`;
+  link.download = `reflow-${version}-${timestamp}.csv`;
   link.click();
   URL.revokeObjectURL(url);
   showToast(`${reflowSamples.length} reflow samples downloaded`);
@@ -565,7 +573,7 @@ async function startProcess() {
   ui.start.disabled = true;
   try {
     const status = await apiRequest("/start", { method: "POST" });
-    if (["preheat", "soak", "reflow", "cooling"].includes(status.state)) beginReflowRecording();
+    if (["preheat", "soak", "reflow", "cooling"].includes(status.state)) beginReflowRecording(status.version);
     resetChart(); updateStatus(status); showToast("Reflow profile started");
   }
   catch (error) { showToast(error.message, true); }

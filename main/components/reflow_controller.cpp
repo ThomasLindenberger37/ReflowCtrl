@@ -139,14 +139,27 @@ void ReflowController::start_process(const std::uint32_t time_ms) noexcept {
     peak_phase_started_ = false;
     actual_peak_observed_ = false;
     peak_temperature_reached_ = false;
+    preheating_to_profile_start_ = telemetry_.actual_temperature_c < PROFILE_START_TEMPERATURE_C;
     heater_was_active_ = false;
     last_heater_active_at_ms_ = time_ms;
     telemetry_.state = ReflowState::Running;
     telemetry_.elapsed_ms = 0;
-    telemetry_.requested_power = HeaterPower::Off;
-    telemetry_.active_power = HeaterPower::Off;
-    telemetry_.relay_enabled = false;
     telemetry_.peak_prompt_ready = false;
+    telemetry_.target_temperature_c = static_cast<float>(PROFILE_START_TEMPERATURE_C);
+    telemetry_.target_ramp_c_per_s = 0.0F;
+    telemetry_.temperature_error_c =
+        telemetry_.target_temperature_c - telemetry_.actual_temperature_c;
+    telemetry_.requested_power =
+        telemetry_.actual_temperature_c < FULL_POWER_PREHEAT_LIMIT_C
+            ? HeaterPower::P100
+            : temperature_controller_.update(
+                  {telemetry_.target_temperature_c, telemetry_.actual_temperature_c, 0.0F, 0.0F,
+                   heating_rate_at(oven_, telemetry_.actual_temperature_c,
+                                   static_cast<float>(profile_.max_ramp_rate_c_per_s)),
+                   false, false});
+    relay_window_.request(telemetry_.requested_power);
+    apply_relay(relay_window_.update(time_ms));
+    telemetry_.active_power = relay_window_.active_power();
     ESP_LOGI(TAG, "Reflow started");
 }
 
@@ -181,7 +194,7 @@ void ReflowController::on_temperature_measured(const TemperatureMeasured& messag
 void ReflowController::update_control(const std::uint32_t time_ms,
                                       const float temperature_c) noexcept {
     temperature_history_.add(time_ms, temperature_c);
-    const float actual_ramp = temperature_history_.ramp_c_per_s();
+    float actual_ramp = temperature_history_.ramp_c_per_s();
     if (telemetry_.relay_enabled) {
         last_heater_active_at_ms_ = time_ms;
         heater_was_active_ = true;
@@ -190,6 +203,15 @@ void ReflowController::update_control(const std::uint32_t time_ms,
         heater_was_active_ && time_ms - last_heater_active_at_ms_ < RECENT_HEATING_WINDOW_MS;
 
     const std::uint32_t sample_duration_ms = time_ms - last_temperature_at_ms_;
+    const bool profile_started =
+        preheating_to_profile_start_ && temperature_c >= PROFILE_START_TEMPERATURE_C;
+    if (profile_started) {
+        preheating_to_profile_start_ = false;
+        temperature_history_.reset();
+        temperature_history_.add(time_ms, temperature_c);
+        temperature_controller_.reset();
+        actual_ramp = 0.0F;
+    }
     if (telemetry_.has_temperature
         && telemetry_.actual_temperature_c >= profile_.liquidus_temperature_c
         && temperature_c >= profile_.liquidus_temperature_c) {
@@ -203,7 +225,7 @@ void ReflowController::update_control(const std::uint32_t time_ms,
             && peak_temperature_reached_) {
             holding_for_liquidus_time_ = false;
         }
-    } else {
+    } else if (!preheating_to_profile_start_ && !profile_started) {
         profile_elapsed_ms_ += sample_duration_ms;
     }
 
@@ -229,17 +251,23 @@ void ReflowController::update_control(const std::uint32_t time_ms,
         return;
     }
     const TargetPoint target =
-        holding_for_liquidus_time_
+        preheating_to_profile_start_
+            ? TargetPoint{static_cast<float>(PROFILE_START_TEMPERATURE_C), 0.0F}
+        : holding_for_liquidus_time_
             ? TargetPoint{static_cast<float>(profile_.peak_temperature_c), 0.0F}
             : target_at(curve_, elapsed_s);
     telemetry_.target_temperature_c = target.temperature_c;
     telemetry_.target_ramp_c_per_s = target.ramp_c_per_s;
     telemetry_.actual_ramp_c_per_s = actual_ramp;
     telemetry_.temperature_error_c = target.temperature_c - temperature_c;
-    telemetry_.requested_power = temperature_controller_.update(
-        {target.temperature_c, temperature_c, target.ramp_c_per_s, actual_ramp,
-         heating_rate_at(oven_, temperature_c, static_cast<float>(profile_.max_ramp_rate_c_per_s)),
-         telemetry_.requested_power != HeaterPower::Off, heater_recently_active});
+    telemetry_.requested_power =
+        preheating_to_profile_start_ && temperature_c < FULL_POWER_PREHEAT_LIMIT_C
+            ? HeaterPower::P100
+            : temperature_controller_.update(
+                  {target.temperature_c, temperature_c, target.ramp_c_per_s, actual_ramp,
+                   heating_rate_at(oven_, temperature_c,
+                                   static_cast<float>(profile_.max_ramp_rate_c_per_s)),
+                   telemetry_.requested_power != HeaterPower::Off, heater_recently_active});
     relay_window_.request(telemetry_.requested_power);
     apply_relay(relay_window_.update(time_ms));
     telemetry_.active_power = relay_window_.active_power();
@@ -289,6 +317,7 @@ void ReflowController::on_characterization_started(const CharacterizationStarted
 void ReflowController::stop(const ReflowState state, const std::uint32_t time_ms) noexcept {
     relay_window_.safety_off(time_ms);
     temperature_controller_.reset();
+    preheating_to_profile_start_ = false;
     telemetry_.state = state;
     telemetry_.requested_power = HeaterPower::Off;
     telemetry_.active_power = HeaterPower::Off;
