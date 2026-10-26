@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "${repo_root}"
+
+mapfile -t source_files < <(
+    find main tests \
+        -type f \( -name '*.c' -o -name '*.cpp' -o -name '*.hpp' \) \
+        -print | sort
+)
+
+if ((${#source_files[@]})); then
+    clang-format -i "${source_files[@]}"
+fi

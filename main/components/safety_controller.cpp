@@ -26,9 +26,8 @@ SafetyFault SafetyController::check_sample(const float temperature_c, const std:
 
 SafetyFault SafetyController::check_staleness(const std::uint32_t now_ms,
                                               const std::uint32_t last_sample_ms) const noexcept {
-    return now_ms - last_sample_ms > config_.temperature_timeout_ms
-               ? SafetyFault::StaleTemperature
-               : SafetyFault::None;
+    return now_ms - last_sample_ms > config_.temperature_timeout_ms ? SafetyFault::StaleTemperature
+                                                                    : SafetyFault::None;
 }
 
 const char* safety_fault_name(const SafetyFault fault) noexcept {

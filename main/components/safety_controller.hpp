@@ -24,8 +24,7 @@ class SafetyController {
     explicit SafetyController(SafetyControllerConfig config = {}) noexcept : config_(config) {}
 
     [[nodiscard]] SafetyFault check_sample(float temperature_c, std::uint32_t now_ms,
-                                           bool has_previous_sample,
-                                           float previous_temperature_c,
+                                           bool has_previous_sample, float previous_temperature_c,
                                            std::uint32_t previous_sample_ms) const noexcept;
     [[nodiscard]] SafetyFault check_staleness(std::uint32_t now_ms,
                                               std::uint32_t last_sample_ms) const noexcept;
