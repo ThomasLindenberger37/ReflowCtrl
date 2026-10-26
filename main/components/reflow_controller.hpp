@@ -36,6 +36,8 @@ struct ControllerTelemetry {
 
 class ReflowController {
    public:
+    static constexpr std::uint32_t MAXIMUM_PROCESS_DURATION_MS = 30U * 60U * 1000U;
+
     explicit ReflowController(MessageBus& bus) noexcept : bus_(bus) {}
 
     esp_err_t start() noexcept;

@@ -278,9 +278,12 @@ void ReflowController::tick() noexcept {
     const std::uint32_t time_ms = now_ms();
     lock();
     if (telemetry_.state == ReflowState::Running) {
-        const SafetyFault fault =
-            safety_controller_.check_staleness(time_ms, last_temperature_at_ms_);
-        if (fault != SafetyFault::None) {
+        if (time_ms - started_at_ms_ >= MAXIMUM_PROCESS_DURATION_MS) {
+            stop(ReflowState::Aborted, time_ms);
+            ESP_LOGW(TAG, "Reflow aborted after reaching the 30-minute time limit");
+        } else if (const SafetyFault fault =
+                       safety_controller_.check_staleness(time_ms, last_temperature_at_ms_);
+                   fault != SafetyFault::None) {
             stop(ReflowState::Fault, time_ms);
             ESP_LOGE(TAG, "Safety fault: %s", safety_fault_name(fault));
         } else {
