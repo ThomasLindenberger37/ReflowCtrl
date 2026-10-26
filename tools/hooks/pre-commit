@@ -14,3 +14,5 @@ mapfile -t source_files < <(
 if ((${#source_files[@]})); then
     clang-format -i "${source_files[@]}"
 fi
+
+uv run ruff format .

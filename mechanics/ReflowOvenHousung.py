@@ -180,9 +180,7 @@ HOUSING_CONFIG = HousingConfig(
     spacer_diameter=8.0,
     spacer_height=8.0,
     mounting_hole_chamfer=0.8,
-    auxiliary_mounts=(
-        MountingHole(Point(18.0, 65.0), diameter=2.8),
-    ),
+    auxiliary_mounts=(MountingHole(Point(18.0, 65.0), diameter=2.8),),
 )
 
 VENT_CONFIG = VentConfig(
@@ -396,8 +394,7 @@ def calculate_hex_centres(
     """Calculate honeycomb centres below the PCB."""
     bounds = vent_bounds(pcb, housing, vent)
     mount_centres = tuple(
-        to_housing_coordinates(mount.position, housing)
-        for mount in pcb.mounting_holes
+        to_housing_coordinates(mount.position, housing) for mount in pcb.mounting_holes
     )
     minimum_mount_distance = vent.mount_clearance + hexagon_radius(vent)
     return calculate_hex_centres_in_bounds(
@@ -605,9 +602,7 @@ def calculate_lid_hex_centres(
         vent,
     )
     return tuple(
-        centre
-        for centre in centres
-        if is_outside_button_keepout(centre, housing, vent, button)
+        centre for centre in centres if is_outside_button_keepout(centre, housing, vent, button)
     )
 
 
@@ -691,12 +686,7 @@ def snap_tab_min_y(
     if position.side == "south":
         return housing.wall_thickness + lid.fit_clearance
     if position.side == "north":
-        return (
-            outer_length
-            - housing.wall_thickness
-            - lid.fit_clearance
-            - lid.snap_tab_thickness
-        )
+        return outer_length - housing.wall_thickness - lid.fit_clearance - lid.snap_tab_thickness
     raise ValueError(f"Unsupported snap side: {position.side}")
 
 
@@ -727,9 +717,7 @@ def create_snap_hook(
         raise ValueError(f"Unsupported snap side: {position.side}")
 
     with BuildPart() as hook:
-        with BuildSketch(
-            Plane.YZ.offset(position.x - lid.snap_tab_width / 2)
-        ):
+        with BuildSketch(Plane.YZ.offset(position.x - lid.snap_tab_width / 2)):
             Polygon(*profile)
         extrude(amount=lid.snap_tab_width)
     return hook.part
@@ -836,11 +824,7 @@ def create_snap_receiver_cut(
     """Create through-slots for latching and externally releasing the snaps."""
     _, outer_length = housing_footprint(pcb, housing)
     wall_top_z = housing.base_thickness + housing.wall_height
-    hook_bottom_z = (
-        wall_top_z
-        - lid.snap_tab_length
-        + lid.snap_hook_bottom_offset
-    )
+    hook_bottom_z = wall_top_z - lid.snap_tab_length + lid.snap_hook_bottom_offset
     pocket_bottom_z = hook_bottom_z - lid.receiver_clearance
     pocket_height = lid.snap_hook_height + 2 * lid.receiver_clearance
     pocket_width = lid.snap_tab_width + 2 * lid.receiver_clearance
@@ -939,21 +923,9 @@ def create_button_pin(
     centre = button_position(housing, button)
     wall_top_z = housing.base_thickness + housing.wall_height
     lid_assembly_offset_z = wall_top_z - lid.snap_tab_length
-    button_surface_z = (
-        housing.base_thickness
-        + housing.spacer_height
-        + button.height_above_spacers
-    )
-    pin_tip_z = (
-        button_surface_z
-        + button.pin_tip_clearance
-        - lid_assembly_offset_z
-    )
-    flexure_underside_z = (
-        lid.snap_tab_length
-        + lid.thickness
-        - button.flexure_thickness
-    )
+    button_surface_z = housing.base_thickness + housing.spacer_height + button.height_above_spacers
+    pin_tip_z = button_surface_z + button.pin_tip_clearance - lid_assembly_offset_z
+    flexure_underside_z = lid.snap_tab_length + lid.thickness - button.flexure_thickness
     pin_height = flexure_underside_z - pin_tip_z + BOOLEAN_OVERLAP
 
     if pin_height <= 0:
@@ -992,11 +964,7 @@ def create_lid_label_cuts(
 
     label_centre_x = width * lid.closed_west_fraction / 2
     label_centre_y = length / 2
-    placed_cut = (
-        Pos(label_centre_x, label_centre_y, 0)
-        * Rot(0, 0, 90)
-        * label_cut.part
-    )
+    placed_cut = Pos(label_centre_x, label_centre_y, 0) * Rot(0, 0, 90) * label_cut.part
     return tuple(placed_cut.solids())
 
 
@@ -1036,9 +1004,7 @@ def create_lid_model(
     lid_body -= create_button_flexure_cut(housing, lid, button)
     lid_body += create_button_pin(housing, lid, button)
     with SkipClean():
-        lid_body = lid_body.cut(
-            *create_lid_label_cuts(pcb, housing, lid, label)
-        )
+        lid_body = lid_body.cut(*create_lid_label_cuts(pcb, housing, lid, label))
     return lid_body
 
 
@@ -1147,34 +1113,46 @@ def create_cable_wall_hole_cut(
 
     hole_cut = None
     for centre in centres:
-        through_hole = Pos(
-            -BOOLEAN_OVERLAP,
-            centre.y,
-            centre.z,
-        ) * Rot(0, 90, 0) * Cylinder(
-            hole_radius,
-            housing.wall_thickness + 2 * BOOLEAN_OVERLAP,
-            align=(Align.CENTER, Align.CENTER, Align.MIN),
+        through_hole = (
+            Pos(
+                -BOOLEAN_OVERLAP,
+                centre.y,
+                centre.z,
+            )
+            * Rot(0, 90, 0)
+            * Cylinder(
+                hole_radius,
+                housing.wall_thickness + 2 * BOOLEAN_OVERLAP,
+                align=(Align.CENTER, Align.CENTER, Align.MIN),
+            )
         )
-        outer_chamfer = Pos(
-            0,
-            centre.y,
-            centre.z,
-        ) * Rot(0, 90, 0) * Cone(
-            chamfer_radius,
-            hole_radius,
-            chamfer,
-            align=(Align.CENTER, Align.CENTER, Align.MIN),
+        outer_chamfer = (
+            Pos(
+                0,
+                centre.y,
+                centre.z,
+            )
+            * Rot(0, 90, 0)
+            * Cone(
+                chamfer_radius,
+                hole_radius,
+                chamfer,
+                align=(Align.CENTER, Align.CENTER, Align.MIN),
+            )
         )
-        inner_chamfer = Pos(
-            housing.wall_thickness - chamfer,
-            centre.y,
-            centre.z,
-        ) * Rot(0, 90, 0) * Cone(
-            hole_radius,
-            chamfer_radius,
-            chamfer,
-            align=(Align.CENTER, Align.CENTER, Align.MIN),
+        inner_chamfer = (
+            Pos(
+                housing.wall_thickness - chamfer,
+                centre.y,
+                centre.z,
+            )
+            * Rot(0, 90, 0)
+            * Cone(
+                hole_radius,
+                chamfer_radius,
+                chamfer,
+                align=(Align.CENTER, Align.CENTER, Align.MIN),
+            )
         )
         hole = through_hole + outer_chamfer + inner_chamfer
         hole_cut = hole if hole_cut is None else hole_cut + hole
