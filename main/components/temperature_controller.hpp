@@ -29,7 +29,7 @@ struct TemperatureControlInput {
 
 class TemperatureController {
    public:
-    explicit TemperatureController(TemperatureControllerConfig config = {}) noexcept
+    explicit TemperatureController(const TemperatureControllerConfig& config = {}) noexcept
         : config_(config) {}
 
     [[nodiscard]] HeaterPower update(const TemperatureControlInput& input) noexcept;

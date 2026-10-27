@@ -120,10 +120,17 @@ jobs:
           clang-tidy -p build/unit-tests "${tidy_files[@]}"
 
       - name: Run cppcheck on host-buildable code
+        shell: bash
         run: |
+          jq '[.[] | select(.file | test("/main/.*\\.(c|cpp)$"))]' \
+            build/unit-tests/compile_commands.json \
+            > build/unit-tests/cppcheck_compile_commands.json
+          if [[ "$(jq 'length' build/unit-tests/cppcheck_compile_commands.json)" -eq 0 ]]; then
+            echo "No host-buildable main sources found in compile_commands.json" >&2
+            exit 1
+          fi
           cppcheck \
-            --project=build/unit-tests/compile_commands.json \
-            --file-filter='*/main/*' \
+            --project=build/unit-tests/cppcheck_compile_commands.json \
             --enable=warning,performance,portability \
             --inline-suppr \
             --suppress=missingIncludeSystem \
@@ -146,6 +153,9 @@ jobs:
       - name: Build firmware with ESP-IDF 6.1
         run: |
           docker run --rm \
+            --env GIT_CONFIG_COUNT=1 \
+            --env GIT_CONFIG_KEY_0=safe.directory \
+            --env GIT_CONFIG_VALUE_0=/project \
             --volume "${GITHUB_WORKSPACE}:/project" \
             --workdir /project \
             espressif/idf:v6.1 \
