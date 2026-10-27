@@ -16,3 +16,4 @@ if ((${#source_files[@]})); then
 fi
 
 uv run ruff format .
+uv run ruff check .

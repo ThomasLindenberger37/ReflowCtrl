@@ -28,7 +28,6 @@ from build123d import (
     extrude,
 )
 
-
 # Data models
 
 
@@ -482,14 +481,14 @@ def pair_slot_centres(
     """Group consecutive slot centres into cable-tie pairs."""
     if len(centres) % 2:
         raise ValueError("Cable slot count must be even to create recesses")
-    return tuple(zip(centres[::2], centres[1::2]))
+    return tuple(zip(centres[::2], centres[1::2], strict=True))
 
 
 def adjacent_slot_centres(
     centres: tuple[Point, ...],
 ) -> tuple[tuple[Point, Point], ...]:
     """Return every pair of neighbouring cable-slot centres."""
-    return tuple(zip(centres, centres[1:]))
+    return tuple(zip(centres, centres[1:], strict=False))
 
 
 def calculate_cable_wall_hole_centres(
@@ -621,13 +620,12 @@ def create_hex_cut(
         raise ValueError("Hex pattern contains no openings")
 
     with BuildPart() as hex_cut:
-        with BuildSketch(Plane.XY.offset(bottom_z)):
-            with Locations(*locations):
-                RegularPolygon(
-                    hexagon_radius(vent),
-                    HEXAGON_SIDE_COUNT,
-                    rotation=HEXAGON_ROTATION_DEGREES,
-                )
+        with BuildSketch(Plane.XY.offset(bottom_z)), Locations(*locations):
+            RegularPolygon(
+                hexagon_radius(vent),
+                HEXAGON_SIDE_COUNT,
+                rotation=HEXAGON_ROTATION_DEGREES,
+            )
         extrude(amount=height)
 
     return hex_cut.part
@@ -1050,12 +1048,11 @@ def create_cable_slot_cut(
     total_height = housing.base_thickness + housing.spacer_height
 
     with BuildPart() as slot_cut:
-        with BuildSketch(Plane.XY.offset(-BOOLEAN_OVERLAP)):
-            with Locations(*locations):
-                SlotOverall(
-                    cable_support.slot_length,
-                    cable_support.slot_width,
-                )
+        with BuildSketch(Plane.XY.offset(-BOOLEAN_OVERLAP)), Locations(*locations):
+            SlotOverall(
+                cable_support.slot_length,
+                cable_support.slot_width,
+            )
         extrude(amount=total_height + 2 * BOOLEAN_OVERLAP)
 
     return slot_cut.part
